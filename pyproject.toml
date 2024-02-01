@@ -1,0 +1,99 @@
+[project]
+name = "orchestrator"
+dynamic = ["version"]
+authors = [{ name = "Sebastiaan la Fleur", email = "sebastiaan.lafleur@tno.nl" }]
+description = "Orchestrator component of OMOTES project which monitors workflows and starts the various steps of each workflow."
+classifiers = [
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Information Technology",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+dependencies = [
+    "python-dotenv ~= 1.0.0",
+    "dataclass-binder ~= 0.3.4",
+    "sqlalchemy ~= 2.0.23",
+    "psycopg2 ~= 2.9.9",
+    "celery[sqlalchemy] ~= 5.3.6",
+    "omotes-sdk-python ~= 0.0.1",
+    "omotes-job-tools ~= 0.0.1",
+    "jsonpickle ~= 3.0.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    #"pip-tools~=6.13.0",  # Installed via create_env script
+    "black ~= 22.1.0",
+    "flake8 ~= 6.0.0",
+    "Flake8-pyproject ~= 1.2.3",
+    "flake8-docstrings ~= 1.7.0",
+    "flake8-quotes ~= 3.3.2",
+    "pytest ~= 7.3.1",
+    "pytest-cov ~= 4.0.0",
+    "mypy ~= 1.5.1",
+    "build ~= 1.0.3",
+    "setuptools-git-versioning < 2"
+]
+
+[project.urls]
+homepage = "https://www.nwn.nu"
+documentation = "https://readthedocs.org"
+repository = "https://github.com/Nieuwe-Warmte-Nu/orchestrator"
+changelog = "https://github.com/Nieuwe-Warmte-Nu/orchestrator/blob/main/CHANGELOG.md"
+
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = ["setuptools ~= 67.7.2", "wheel ~= 0.40.0", "setuptools-git-versioning<2"]
+
+[tools.setuptools]
+packages = ["src/omotes_orchestrator"]
+
+[tool.setuptools-git-versioning]
+enabled = true
+
+[tool.pytest.ini_options]
+addopts = "--cov=omotes_orchestrator --cov-report html --cov-report term-missing --cov-fail-under 95"
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.flake8]
+exclude = ['.venv/*', 'venv/*', 'doc/*']
+ignore = ['Q000', 'D401']
+per-file-ignores = ['__init__.py:F401', 'test_main.py:D100,D101,D102,D103']
+max-line-length = 100
+count = true
+
+[tool.black]
+line-length = 100
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+exclude = [
+    '.venv/*',
+    'venv/*',
+    'doc/*',
+    'build',
+    'component',
+    'testscript',
+    'testmodel',
+    'tryouts.py',
+]
+
+# mypy per-module options:
+[[tool.mypy.overrides]]
+module = "unit_test.*"
+check_untyped_defs = true
+ignore_missing_imports = true
