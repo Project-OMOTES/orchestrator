@@ -4,6 +4,12 @@
 #
 #    pip-compile --output-file=requirements.txt pyproject.toml
 #
+aio-pika==9.3.1
+    # via
+    #   omotes-job-tools
+    #   omotes-sdk-python
+aiormq==6.7.7
+    # via aio-pika
 amqp==5.2.0
     # via kombu
 billiard==4.2.0
@@ -26,12 +32,26 @@ dataclass-binder==0.3.4
     # via orchestrator (pyproject.toml)
 greenlet==3.0.1
     # via sqlalchemy
+idna==3.6
+    # via yarl
 jsonpickle==3.0.2
     # via orchestrator (pyproject.toml)
 kombu==5.3.4
     # via celery
+multidict==6.0.5
+    # via yarl
+omotes-job-tools==0.0.1
+    # via orchestrator (pyproject.toml)
+omotes-sdk-protocol==0.0.3
+    # via omotes-sdk-python
+omotes-sdk-python==0.0.1
+    # via orchestrator (pyproject.toml)
+pamqp==3.2.1
+    # via aiormq
 prompt-toolkit==3.0.41
     # via click-repl
+protobuf==4.25.2
+    # via omotes-sdk-protocol
 psycopg2==2.9.9
     # via orchestrator (pyproject.toml)
 python-dateutil==2.8.2
@@ -55,3 +75,7 @@ vine==5.1.0
     #   kombu
 wcwidth==0.2.12
     # via prompt-toolkit
+yarl==1.9.4
+    # via
+    #   aio-pika
+    #   aiormq

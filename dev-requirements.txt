@@ -4,6 +4,15 @@
 #
 #    pip-compile --constraint=requirements.txt --extra=dev --output-file=dev-requirements.txt pyproject.toml
 #
+aio-pika==9.3.1
+    # via
+    #   -c requirements.txt
+    #   omotes-job-tools
+    #   omotes-sdk-python
+aiormq==6.7.7
+    # via
+    #   -c requirements.txt
+    #   aio-pika
 amqp==5.2.0
     # via
     #   -c requirements.txt
@@ -62,6 +71,10 @@ greenlet==3.0.1
     # via
     #   -c requirements.txt
     #   sqlalchemy
+idna==3.6
+    # via
+    #   -c requirements.txt
+    #   yarl
 iniconfig==2.0.0
     # via pytest
 jsonpickle==3.0.2
@@ -74,17 +87,37 @@ kombu==5.3.4
     #   celery
 mccabe==0.7.0
     # via flake8
+multidict==6.0.5
+    # via
+    #   -c requirements.txt
+    #   yarl
 mypy==1.5.1
     # via orchestrator (pyproject.toml)
 mypy-extensions==1.0.0
     # via
     #   black
     #   mypy
+omotes-job-tools==0.0.1
+    # via
+    #   -c requirements.txt
+    #   orchestrator (pyproject.toml)
+omotes-sdk-protocol==0.0.3
+    # via
+    #   -c requirements.txt
+    #   omotes-sdk-python
+omotes-sdk-python==0.0.1
+    # via
+    #   -c requirements.txt
+    #   orchestrator (pyproject.toml)
 packaging==23.2
     # via
     #   build
     #   pytest
     #   setuptools-git-versioning
+pamqp==3.2.1
+    # via
+    #   -c requirements.txt
+    #   aiormq
 pathspec==0.11.2
     # via black
 platformdirs==4.1.0
@@ -95,6 +128,10 @@ prompt-toolkit==3.0.41
     # via
     #   -c requirements.txt
     #   click-repl
+protobuf==4.25.2
+    # via
+    #   -c requirements.txt
+    #   omotes-sdk-protocol
 psycopg2==2.9.9
     # via
     #   -c requirements.txt
@@ -155,6 +192,11 @@ wcwidth==0.2.12
     # via
     #   -c requirements.txt
     #   prompt-toolkit
+yarl==1.9.4
+    # via
+    #   -c requirements.txt
+    #   aio-pika
+    #   aiormq
 
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools
