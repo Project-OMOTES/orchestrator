@@ -22,4 +22,5 @@ jobs:
     - name: Build the container image
       run: |
         docker build . --tag ghcr.io/project-omotes/omotes_orchestrator:latest --tag ghcr.io/project-omotes/omotes_orchestrator:${{ github.ref_name}}
-        docker push ghcr.io/project-omotes/omotes_orchestrator:latest ghcr.io/project-omotes/omotes_orchestrator:${{ github.ref_name}}
+        docker push ghcr.io/project-omotes/omotes_orchestrator:latest
+        docker push ghcr.io/project-omotes/omotes_orchestrator:${{ github.ref_name}}
