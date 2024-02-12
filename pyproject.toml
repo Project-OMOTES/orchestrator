@@ -1,7 +1,10 @@
 [project]
 name = "orchestrator"
 dynamic = ["version"]
-authors = [{ name = "Sebastiaan la Fleur", email = "sebastiaan.lafleur@tno.nl" }]
+authors = [
+    { name = "Sebastiaan la Fleur", email = "sebastiaan.lafleur@tno.nl" },
+    { name = "Mark Vrijlandt", email = "mark.vrijlandt@tno.nl" },
+]
 description = "Orchestrator component of OMOTES project which monitors workflows and starts the various steps of each workflow."
 classifiers = [
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
@@ -23,8 +26,7 @@ dependencies = [
     "sqlalchemy ~= 2.0.23",
     "psycopg2 ~= 2.9.9",
     "celery[sqlalchemy] ~= 5.3.6",
-    "omotes-sdk-python ~= 0.0.1",
-    "omotes-job-tools ~= 0.0.1",
+    "omotes-sdk-python ~= 0.0.3",
     "jsonpickle ~= 3.0.2",
 ]
 
