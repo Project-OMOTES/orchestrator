@@ -37,7 +37,7 @@ class CeleryInterface:
         #  TODO set late ack, prefetch == 1, ignore results (will the job still exist in postgresql? How does queueing work in this case?),
         self.app = Celery(
             "omotes",
-            backend=f"db+postgresql://{postgresql_config.username}:{postgresql_config.password}@{postgresql_config.host}:{postgresql_config.port}/{postgresql_config.database}",
+            # backend=f"db+postgresql://{postgresql_config.username}:{postgresql_config.password}@{postgresql_config.host}:{postgresql_config.port}/{postgresql_config.database}",
             broker=f"pyamqp://{rabbitmq_config.username}:{rabbitmq_config.password}@{rabbitmq_config.host}:{rabbitmq_config.port}/{rabbitmq_config.virtual_host}",
         )
 
@@ -49,5 +49,5 @@ class CeleryInterface:
             workflow_type.workflow_type_name, (job_id, input_esdl), queue=workflow_type.workflow_type_name
         ).delay()
 
-    def retrieve_result(self, celery_task_id: str) -> Any:
-        return self.app.AsyncResult(celery_task_id).get()
+    # def retrieve_result(self, celery_task_id: str) -> Any:
+    #     return self.app.AsyncResult(celery_task_id).get()
