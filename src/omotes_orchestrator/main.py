@@ -4,16 +4,19 @@ import signal
 import threading
 
 import jsonpickle
-from omotes_job_tools.messages import StatusUpdateMessage, TaskStatus, CalculationResult
+from omotes_sdk.internal.orchestrator_worker_events.messages import (
+    StatusUpdateMessage,
+    TaskStatus,
+    CalculationResult,
+)
+from omotes_sdk.internal.orchestrator.orchestrator_interface import OrchestratorInterface
+from omotes_sdk.internal.common.broker_interface import BrokerInterface as JobBrokerInterface
 from omotes_sdk_protocol.job_pb2 import JobSubmission, JobResult
 from omotes_sdk.config import RabbitMQConfig
 from omotes_sdk.job import Job
-from omotes_sdk.orchestrator_interface import OrchestratorInterface
 from omotes_sdk.workflow_type import WorkflowTypeManager, WorkflowType
-from omotes_job_tools.broker_interface import BrokerInterface as JobBrokerInterface
 
 from omotes_orchestrator.celery_interface import CeleryInterface, PostgreSQLConfig
-
 
 logger = logging.getLogger("omotes_orchestrator")
 
@@ -36,7 +39,9 @@ class Orchestrator:
     def start(self):
         self.celery_if.start()
         self.omotes_if.start()
-        self.omotes_if.connect_to_job_submissions(callback_on_new_job=self.new_job_submitted_handler)
+        self.omotes_if.connect_to_job_submissions(
+            callback_on_new_job=self.new_job_submitted_handler
+        )
         self.jobs_broker_if.start()
         self.jobs_broker_if.add_queue_subscription("omotes_task_events", self.task_status_update)
 
@@ -46,7 +51,9 @@ class Orchestrator:
         self.jobs_broker_if.stop()
 
     def new_job_submitted_handler(self, job_submission: JobSubmission, job: Job) -> None:
-        logger.info("Received new job %s for workflow type %s", job.id, job_submission.workflow_type)
+        logger.info(
+            "Received new job %s for workflow type %s", job.id, job_submission.workflow_type
+        )
         self.celery_if.start_workflow(job.workflow_type, job.id, job_submission.esdl)
 
     def task_status_update(self, serialized_message: bytes) -> None:
@@ -59,11 +66,17 @@ class Orchestrator:
         )
         if status_update.status == TaskStatus.SUCCEEDED:
             job = Job(
-                id=status_update.omotes_job_id, workflow_type=WorkflowType(status_update.task_type, "")
+                id=status_update.omotes_job_id,
+                workflow_type=WorkflowType(status_update.task_type, ""),
             )  # TODO Get workflow from WorkflowManager
-            result: CalculationResult = jsonpickle.decode(self.celery_if.retrieve_result(status_update.celery_task_id))
+            result: CalculationResult = jsonpickle.decode(
+                self.celery_if.retrieve_result(status_update.celery_task_id),
+                classes=CalculationResult,
+            )
             logger.info(
-                "Received result for job %s through task %s", status_update.omotes_job_id, status_update.celery_task_id
+                "Received succeeded result for job %s through task %s",
+                status_update.omotes_job_id,
+                status_update.celery_task_id,
             )
             job_result_msg = JobResult(
                 uuid=str(job.id),
@@ -74,15 +87,25 @@ class Orchestrator:
 
 
 def main():
-    omotes_rabbitmq_config = RabbitMQConfig(username="omotes", password="somepass1", virtual_host="omotes")
-    celery_rabbitmq_config = RabbitMQConfig(username="celery", password="somepass2", virtual_host="omotes_celery")
+    omotes_rabbitmq_config = RabbitMQConfig(
+        username="omotes", password="somepass1", virtual_host="omotes"
+    )
+    celery_rabbitmq_config = RabbitMQConfig(
+        username="celery", password="somepass2", virtual_host="omotes_celery"
+    )
     celery_postgresql_config = PostgreSQLConfig(
-        username="celery", password="somepass3", database="omotes_celery", host="localhost", port=5432
+        username="celery",
+        password="somepass3",
+        database="omotes_celery",
+        host="localhost",
+        port=5432,
     )
 
     workflow_type_manager = WorkflowTypeManager(
         possible_workflows=[
-            WorkflowType(workflow_type_name="grow_optimizer", workflow_type_description_name="Grow Optimizer")
+            WorkflowType(
+                workflow_type_name="grow_optimizer", workflow_type_description_name="Grow Optimizer"
+            )
         ]
     )
     orchestrator_if = OrchestratorInterface(omotes_rabbitmq_config, workflow_type_manager)
