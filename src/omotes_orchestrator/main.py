@@ -1,19 +1,17 @@
 import logging
-import pickle
 import signal
+import sys
 import threading
 import pprint
 
 from dotenv import load_dotenv
-import jsonpickle
-from omotes_sdk.internal.orchestrator_worker_events.messages import (
-    StatusUpdateMessage,
-    TaskStatus,
-    CalculationResult,
+from omotes_sdk.internal.orchestrator_worker_events.messages.task_pb2 import (
+    TaskResult,
+    TaskProgressUpdate,
 )
 from omotes_sdk.internal.orchestrator.orchestrator_interface import OrchestratorInterface
 from omotes_sdk.internal.common.broker_interface import BrokerInterface as JobBrokerInterface
-from omotes_sdk_protocol.job_pb2 import JobSubmission, JobResult
+from omotes_sdk_protocol.job_pb2 import JobSubmission, JobResult, JobStatusUpdate, JobProgressUpdate
 from omotes_sdk.job import Job
 from omotes_sdk.workflow_type import WorkflowTypeManager, WorkflowType
 
@@ -31,10 +29,10 @@ class Orchestrator:
     celery_if: CeleryInterface
 
     def __init__(
-        self,
-        omotes_orchestrator_if: OrchestratorInterface,
-        jobs_broker_if: JobBrokerInterface,
-        celery_if: CeleryInterface,
+            self,
+            omotes_orchestrator_if: OrchestratorInterface,
+            jobs_broker_if: JobBrokerInterface,
+            celery_if: CeleryInterface,
     ):
         self.omotes_if = omotes_orchestrator_if
         self.jobs_broker_if = jobs_broker_if
@@ -47,7 +45,8 @@ class Orchestrator:
             callback_on_new_job=self.new_job_submitted_handler
         )
         self.jobs_broker_if.start()
-        self.jobs_broker_if.add_queue_subscription("omotes_task_events", self.task_status_update)
+        self.jobs_broker_if.add_queue_subscription("omotes_task_result_events", self.task_result_received)
+        self.jobs_broker_if.add_queue_subscription("omotes_task_progress_events", self.task_progress_update)
 
     def stop(self):
         self.omotes_if.stop()
@@ -60,34 +59,67 @@ class Orchestrator:
         )
         self.celery_if.start_workflow(job.workflow_type, job.id, job_submission.esdl)
 
-    def task_status_update(self, serialized_message: bytes) -> None:
-        status_update = StatusUpdateMessage.from_dict(pickle.loads(serialized_message))
+    def task_result_received(self, serialized_message: bytes) -> None:
+        # status_update = TaskProgressUpdate.from_dict(pickle.loads(serialized_message))
+        task_result = TaskResult()
+        task_result.ParseFromString(serialized_message)
         logger.debug(
-            "Received task status update for task %s (job %s) and new status %s",
-            status_update.celery_task_id,
-            status_update.omotes_job_id,
-            status_update.status,
+            "Received result for task %s (job %s) with status %s",
+            task_result.celery_task_id,
+            task_result.omotes_job_id,
+            task_result.status,
         )
-        if status_update.status == TaskStatus.SUCCEEDED:
+
+        if task_result.status == TaskResult.ResultType.SUCCEEDED:
             job = Job(
-                id=status_update.omotes_job_id,
-                workflow_type=WorkflowType(status_update.task_type, ""),
+                id=task_result.omotes_job_id,
+                workflow_type=WorkflowType(task_result.task_type, ""),
             )  # TODO Get workflow from WorkflowManager
-            result: CalculationResult = jsonpickle.decode(
-                self.celery_if.retrieve_result(status_update.celery_task_id),
-                classes=CalculationResult,
-            )
             logger.info(
                 "Received succeeded result for job %s through task %s",
-                status_update.omotes_job_id,
-                status_update.celery_task_id,
+                task_result.omotes_job_id,
+                task_result.celery_task_id,
             )
-            job_result_msg = JobResult(
-                uuid=str(job.id),
-                result_type=JobResult.ResultType.SUCCEEDED,
-                success=JobResult.Succes(output_esdl=result.output_esdl.encode()),
+            self.omotes_if.send_job_result(
+                job=job,
+                result=JobResult(
+                    uuid=str(job.id),
+                    result_type=JobResult.ResultType.SUCCEEDED,
+                    output_esdl=task_result.output_edsl.encode(),
+                    logs=task_result.logs,
+                ))
+
+    def task_progress_update(self, serialized_message: bytes) -> None:
+        # status_update = TaskProgressUpdate.from_dict(pickle.loads(serialized_message))
+        progress_update = TaskProgressUpdate()
+        progress_update.ParseFromString(serialized_message)
+        logger.debug(
+            "Received progress update for task %s (job %s) with message: %s",
+            progress_update.celery_task_id,
+            progress_update.omotes_job_id,
+            progress_update.status,
+            progress_update.message,
+        )
+
+        job = Job(
+            id=progress_update.omotes_job_id,
+            workflow_type=WorkflowType(progress_update.task_type, ""),
+        )  # TODO Get workflow from WorkflowManager
+
+        if progress_update.progress == 0:  # first progress indicating calculation start
+            self.omotes_if.send_job_status_update(
+                job=job,
+                status_update=JobStatusUpdate(
+                    uuid=str(job.id),
+                    status=JobStatusUpdate.JobStatus.RUNNING,
+                )
             )
-            self.omotes_if.send_job_result(job, job_result_msg)
+
+        self.omotes_if.send_job_progress_update(job, JobProgressUpdate(
+            uuid=str(job.id),
+            progress=progress_update.progress,
+            message=progress_update.message,
+        ))
 
 
 def main():
@@ -115,7 +147,10 @@ def main():
 
     signal.signal(signal.SIGINT, _stop_by_signal)
     signal.signal(signal.SIGTERM, _stop_by_signal)
-    signal.signal(signal.SIGQUIT, _stop_by_signal)
+    if sys.platform.startswith(('win32', 'cygwin')):
+        signal.signal(signal.SIGBREAK, _stop_by_signal)  # ctrl-break key not working
+    else:
+        signal.signal(signal.SIGQUIT, _stop_by_signal)
 
     orchestrator.start()
     stop_event.wait()
