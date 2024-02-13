@@ -2,7 +2,9 @@ import logging
 import pickle
 import signal
 import threading
+import pprint
 
+from dotenv import load_dotenv
 import jsonpickle
 from omotes_sdk.internal.orchestrator_worker_events.messages import (
     StatusUpdateMessage,
@@ -12,12 +14,14 @@ from omotes_sdk.internal.orchestrator_worker_events.messages import (
 from omotes_sdk.internal.orchestrator.orchestrator_interface import OrchestratorInterface
 from omotes_sdk.internal.common.broker_interface import BrokerInterface as JobBrokerInterface
 from omotes_sdk_protocol.job_pb2 import JobSubmission, JobResult
-from omotes_sdk.config import RabbitMQConfig
 from omotes_sdk.job import Job
 from omotes_sdk.workflow_type import WorkflowTypeManager, WorkflowType
 
-from omotes_orchestrator.celery_interface import CeleryInterface, PostgreSQLConfig
+from omotes_orchestrator.celery_interface import CeleryInterface
+from omotes_orchestrator.config import OrchestratorConfig
 
+
+load_dotenv(verbose=True)
 logger = logging.getLogger("omotes_orchestrator")
 
 
@@ -87,19 +91,9 @@ class Orchestrator:
 
 
 def main():
-    omotes_rabbitmq_config = RabbitMQConfig(
-        username="omotes", password="somepass1", virtual_host="omotes"
-    )
-    celery_rabbitmq_config = RabbitMQConfig(
-        username="celery", password="somepass2", virtual_host="omotes_celery"
-    )
-    celery_postgresql_config = PostgreSQLConfig(
-        username="celery",
-        password="somepass3",
-        database="omotes_celery",
-        host="localhost",
-        port=5432,
-    )
+    config = OrchestratorConfig()
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug("Config:\n%s", pprint.pformat(config))
 
     workflow_type_manager = WorkflowTypeManager(
         possible_workflows=[
@@ -108,9 +102,9 @@ def main():
             )
         ]
     )
-    orchestrator_if = OrchestratorInterface(omotes_rabbitmq_config, workflow_type_manager)
-    celery_if = CeleryInterface(celery_rabbitmq_config, celery_postgresql_config)
-    jobs_broker_if = JobBrokerInterface(celery_rabbitmq_config)
+    orchestrator_if = OrchestratorInterface(config.rabbitmq_omotes, workflow_type_manager)
+    celery_if = CeleryInterface(config.celery_config)
+    jobs_broker_if = JobBrokerInterface(config.rabbitmq_worker_events)
     orchestrator = Orchestrator(orchestrator_if, jobs_broker_if, celery_if)
 
     stop_event = threading.Event()

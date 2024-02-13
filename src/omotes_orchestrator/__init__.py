@@ -13,9 +13,6 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-    __init__.py file containing the defaults
-"""
 import os
 from omotes_sdk.internal.common.app_logging import setup_logging, LogLevel
 
