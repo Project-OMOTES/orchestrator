@@ -69,7 +69,7 @@ source = ["src"]
 
 [tool.flake8]
 exclude = ['.venv/*', 'venv/*', 'doc/*']
-ignore = ['Q000', 'D401']
+ignore = ['Q000', 'D401', 'D104']
 per-file-ignores = ['__init__.py:F401', 'test_main.py:D100,D101,D102,D103']
 max-line-length = 100
 count = true
