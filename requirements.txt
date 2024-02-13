@@ -28,23 +28,19 @@ click-plugins==1.1.1
     # via celery
 click-repl==0.3.0
     # via celery
-colorama==0.4.6
-    # via click
 dataclass-binder==0.3.4
     # via orchestrator (pyproject.toml)
 greenlet==3.0.1
     # via sqlalchemy
 idna==3.6
     # via yarl
-jsonpickle==3.0.2
-    # via omotes-sdk-python
 kombu==5.3.4
     # via celery
 multidict==6.0.5
     # via yarl
-omotes-sdk-protocol==0.0.3
+omotes-sdk-protocol==0.0.4
     # via omotes-sdk-python
-omotes-sdk-python==0.0.3
+omotes-sdk-python==0.0.5
     # via orchestrator (pyproject.toml)
 pamqp==3.2.1
     # via aiormq
@@ -53,9 +49,7 @@ prompt-toolkit==3.0.41
 protobuf==4.25.2
     # via omotes-sdk-protocol
 psycopg2==2.9.9
-    # via
-    #   omotes-sdk-python
-    #   orchestrator (pyproject.toml)
+    # via orchestrator (pyproject.toml)
 python-dateutil==2.8.2
     # via celery
 python-dotenv==1.0.0
