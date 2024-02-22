@@ -139,7 +139,14 @@ def main():
         possible_workflows=[
             WorkflowType(
                 workflow_type_name="grow_optimizer", workflow_type_description_name="Grow Optimizer"
-            )
+            ),
+            WorkflowType(
+                workflow_type_name="grow_simulator", workflow_type_description_name="Grow Simulator"
+            ),
+            WorkflowType(
+                workflow_type_name="simulator",
+                workflow_type_description_name="High fidelity simulator",
+            ),
         ]
     )
     orchestrator_if = OrchestratorInterface(config.rabbitmq_omotes, workflow_type_manager)

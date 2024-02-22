@@ -26,7 +26,7 @@ dependencies = [
     "sqlalchemy ~= 2.0.23",
     "psycopg2 ~= 2.9.9",
     "celery[sqlalchemy] ~= 5.3.6",
-    "omotes-sdk-python ~= 0.0.5",
+    "omotes-sdk-python ~= 0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -68,7 +68,15 @@ source = ["src"]
 
 [tool.flake8]
 exclude = ['.venv/*', 'venv/*', 'doc/*']
-ignore = ['Q000', 'D401', 'D104']
+ignore = [
+    'Q000', # Remove bad quotes
+    'D401', # Docstring First line should be imperative
+    'E203', # Space before colon (not PEP-8 compliant, and conflicts with black)
+    'C408', # Suggestion to use dict() over {}
+    'W503', # Starting lines with operators.
+    'D104', # Missing docstring in public package
+    'D100'  # Missing docstring in public module
+]
 per-file-ignores = ['__init__.py:F401', 'test_main.py:D100,D101,D102,D103']
 max-line-length = 100
 count = true

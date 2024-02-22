@@ -38,9 +38,9 @@ kombu==5.3.4
     # via celery
 multidict==6.0.5
     # via yarl
-omotes-sdk-protocol==0.0.4
+omotes-sdk-protocol==0.0.6
     # via omotes-sdk-python
-omotes-sdk-python==0.0.5
+omotes-sdk-python==0.0.9
     # via orchestrator (pyproject.toml)
 pamqp==3.2.1
     # via aiormq
