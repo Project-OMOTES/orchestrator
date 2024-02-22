@@ -4,6 +4,8 @@ import sys
 import threading
 import pprint
 import uuid
+from types import FrameType
+from typing import Any, Union
 
 from dotenv import load_dotenv
 from omotes_sdk.internal.orchestrator_worker_events.messages.task_pb2 import (
@@ -25,9 +27,15 @@ logger = logging.getLogger("omotes_orchestrator")
 
 
 class Orchestrator:
+    """Orchestrator application."""
+
     omotes_if: OrchestratorInterface
+    """Interface to OMOTES SDK."""
     jobs_broker_if: JobBrokerInterface
+    """Interface to RabbitMQ, Celery side for events and results send by workers outside of
+    Celery."""
     celery_if: CeleryInterface
+    """Interface to the Celery app."""
 
     def __init__(
         self,
@@ -35,11 +43,19 @@ class Orchestrator:
         jobs_broker_if: JobBrokerInterface,
         celery_if: CeleryInterface,
     ):
+        """Construct the orchestrator.
+
+        :param omotes_orchestrator_if: Interface to OMOTES SDK.
+        :param jobs_broker_if: Interface to RabbitMQ, Celery side for events and results send by
+            workers outside of Celery.
+        :param celery_if: Interface to the Celery app.
+        """
         self.omotes_if = omotes_orchestrator_if
         self.jobs_broker_if = jobs_broker_if
         self.celery_if = celery_if
 
-    def start(self):
+    def start(self) -> None:
+        """Start the orchestrator."""
         self.celery_if.start()
         self.omotes_if.start()
         self.omotes_if.connect_to_job_submissions(
@@ -53,18 +69,28 @@ class Orchestrator:
             "omotes_task_progress_events", self.task_progress_update
         )
 
-    def stop(self):
+    def stop(self) -> None:
+        """Stop the orchestrator."""
         self.omotes_if.stop()
         self.celery_if.stop()
         self.jobs_broker_if.stop()
 
     def new_job_submitted_handler(self, job_submission: JobSubmission, job: Job) -> None:
+        """When a new job is submitted through OMOTES SDK.
+
+        :param job_submission: Job submission message.
+        :param job: Reference to the submitted job.
+        """
         logger.info(
             "Received new job %s for workflow type %s", job.id, job_submission.workflow_type
         )
         self.celery_if.start_workflow(job.workflow_type, job.id, job_submission.esdl)
 
     def task_result_received(self, serialized_message: bytes) -> None:
+        """When a task result is received from a worker through RabbitMQ, Celery side.
+
+        :param serialized_message: Protobuf encoded `TaskResult` message.
+        """
         task_result = TaskResult()
         task_result.ParseFromString(serialized_message)
         logger.debug(
@@ -95,6 +121,10 @@ class Orchestrator:
             )
 
     def task_progress_update(self, serialized_message: bytes) -> None:
+        """When a task event is received from a worker through RabbitMQ, Celery side.
+
+        :param serialized_message: Protobuf encoded `TaskProgressUpdate` message.
+        """
         progress_update = TaskProgressUpdate()
         progress_update.ParseFromString(serialized_message)
         logger.debug(
@@ -130,7 +160,11 @@ class Orchestrator:
         )
 
 
-def main():
+def main() -> None:
+    """Main function which creates and starts the orchestrator.
+
+    Waits indefinitely until the orchestrator stops.
+    """
     config = OrchestratorConfig()
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug("Config:\n%s", pprint.pformat(config))
@@ -156,14 +190,15 @@ def main():
 
     stop_event = threading.Event()
 
-    def _stop_by_signal(sig_num, sig_stackframe):
+    def _stop_by_signal(sig_num: int, sig_stackframe: Union[FrameType, None]) -> Any:
         orchestrator.stop()
         stop_event.set()
 
     signal.signal(signal.SIGINT, _stop_by_signal)
     signal.signal(signal.SIGTERM, _stop_by_signal)
     if sys.platform.startswith(("win32", "cygwin")):
-        signal.signal(signal.SIGBREAK, _stop_by_signal)  # ctrl-break key not working
+        # ctrl-break key not working
+        signal.signal(signal.SIGBREAK, _stop_by_signal)  # type: ignore[attr-defined]
     else:
         signal.signal(signal.SIGQUIT, _stop_by_signal)
 

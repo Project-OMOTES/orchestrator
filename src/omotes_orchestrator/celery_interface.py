@@ -16,6 +16,10 @@ class CeleryInterface:
     """Config for the Celery app."""
 
     def __init__(self, config: CeleryConfig) -> None:
+        """Create the interface to Celery.
+
+        :param config: Configuration for Celery.
+        """
         self.config = config
 
     def start(self) -> None:
@@ -32,7 +36,7 @@ class CeleryInterface:
         self.app.close()
 
     def start_workflow(
-        self, workflow_type: WorkflowType, job_id: uuid.UUID, input_esdl: bytes
+        self, workflow_type: WorkflowType, job_id: uuid.UUID, input_esdl: str
     ) -> None:
         """Start a new workflow.
 

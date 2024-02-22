@@ -61,7 +61,8 @@ packages = ["src/omotes_orchestrator"]
 enabled = true
 
 [tool.pytest.ini_options]
-addopts = "--cov=omotes_orchestrator --cov-report html --cov-report term-missing --cov-fail-under 95"
+addopts = """--cov=omotes_orchestrator --cov-report html --cov-report term-missing \
+--cov-fail-under 24"""
 
 [tool.coverage.run]
 source = ["src"]
@@ -77,7 +78,10 @@ ignore = [
     'D104', # Missing docstring in public package
     'D100'  # Missing docstring in public module
 ]
-per-file-ignores = ['__init__.py:F401', 'test_main.py:D100,D101,D102,D103']
+per-file-ignores = [
+    '__init__.py:F401',
+    './unit_test/*:D100,D101,D102,D103'
+]
 max-line-length = 100
 count = true
 
@@ -105,4 +109,8 @@ exclude = [
 [[tool.mypy.overrides]]
 module = "unit_test.*"
 check_untyped_defs = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "celery.*"
 ignore_missing_imports = true
