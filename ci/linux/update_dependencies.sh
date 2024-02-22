@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/bin/bash
 
 if [[ "$OSTYPE" != "win32" && "$OSTYPE" != "msys" ]]; then
   . .venv/bin/activate

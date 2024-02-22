@@ -113,23 +113,3 @@ jobs:
     - name: run typechecker
       run: |
         ./ci/linux/typecheck.sh
-
-  build:
-    name: Build
-    needs: [ setup ]
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: [ "3.11" ]
-    steps:
-    - uses: actions/checkout@v3
-    - name: Restore venv
-      uses: actions/download-artifact@v4
-      with:
-        name: ${{ runner.os }}-python-${{ matrix.python-version }}-venv-${{github.run_id}}
-    - name: Untar venv
-      run: tar -xvf venv.tar
-    - name: build
-      run: |
-        ./ci/linux/build_python_package.sh
