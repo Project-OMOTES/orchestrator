@@ -178,6 +178,15 @@ def main() -> None:
                 workflow_type_name="grow_simulator", workflow_type_description_name="Grow Simulator"
             ),
             WorkflowType(
+                workflow_type_name="grow_optimizer_no_heat_losses",
+                workflow_type_description_name="Grow Optimizer without heat losses",
+            ),
+            WorkflowType(
+                workflow_type_name="grow_optimizer_no_heat_losses_discounted_capex",
+                workflow_type_description_name="Grow Optimizer without heat losses and a "
+                "discounted CAPEX",
+            ),
+            WorkflowType(
                 workflow_type_name="simulator",
                 workflow_type_description_name="High fidelity simulator",
             ),
