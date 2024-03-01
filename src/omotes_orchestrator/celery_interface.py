@@ -32,7 +32,7 @@ class CeleryInterface:
         self.app.close()
 
     def start_workflow(
-        self, workflow_type: WorkflowType, job_id: uuid.UUID, input_esdl: bytes
+        self, workflow_type: WorkflowType, job_id: uuid.UUID, input_esdl: bytes, params_dict: dict
     ) -> None:
         """Start a new workflow.
 
