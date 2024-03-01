@@ -28,7 +28,7 @@ class CeleryInterface:
 
         self.app = Celery(
             broker=f"pyamqp://{rabbitmq_config.username}:{rabbitmq_config.password}@"
-            f"{rabbitmq_config.host}:{rabbitmq_config.port}/{rabbitmq_config.virtual_host}",
+                   f"{rabbitmq_config.host}:{rabbitmq_config.port}/{rabbitmq_config.virtual_host}",
         )
 
     def stop(self) -> None:
@@ -36,7 +36,11 @@ class CeleryInterface:
         self.app.close()
 
     def start_workflow(
-        self, workflow_type: WorkflowType, job_id: uuid.UUID, input_esdl: str, params_dict: dict = None
+        self,
+        workflow_type: WorkflowType,
+        job_id: uuid.UUID,
+        input_esdl: str,
+        params_dict: dict = None
     ) -> None:
         """Start a new workflow.
 
