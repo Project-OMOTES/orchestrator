@@ -87,7 +87,7 @@ class Orchestrator:
         self.celery_if.start_workflow(
             job.workflow_type,
             job.id,
-            job_submission.esdl.encode(),
+            job_submission.esdl,
             json_format.MessageToDict(job_submission.params_dict)
         )
 
