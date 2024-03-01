@@ -28,7 +28,7 @@ class CeleryInterface:
 
         self.app = Celery(
             broker=f"pyamqp://{rabbitmq_config.username}:{rabbitmq_config.password}@"
-                   f"{rabbitmq_config.host}:{rabbitmq_config.port}/{rabbitmq_config.virtual_host}",
+            f"{rabbitmq_config.host}:{rabbitmq_config.port}/{rabbitmq_config.virtual_host}",
         )
 
     def stop(self) -> None:
