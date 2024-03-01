@@ -93,11 +93,11 @@ mypy-extensions==1.0.0
     # via
     #   black
     #   mypy
-omotes-sdk-protocol==0.0.4
+omotes-sdk-protocol==0.0.6
     # via
     #   -c requirements.txt
     #   omotes-sdk-python
-omotes-sdk-python==0.0.5
+omotes-sdk-python==0.0.9
     # via
     #   -c requirements.txt
     #   orchestrator (pyproject.toml)
