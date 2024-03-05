@@ -4,10 +4,12 @@ import sys
 import threading
 import pprint
 import uuid
+from datetime import timedelta
 from types import FrameType
 from typing import Any, Union
 
 from dotenv import load_dotenv
+from omotes_orchestrator.postgres_interface import PostgresInterface
 from omotes_sdk.internal.orchestrator_worker_events.messages.task_pb2 import (
     TaskResult,
     TaskProgressUpdate,
@@ -36,12 +38,15 @@ class Orchestrator:
     Celery."""
     celery_if: CeleryInterface
     """Interface to the Celery app."""
+    postgresql_if: PostgresInterface
+    """Interface to PostgreSQL."""
 
     def __init__(
         self,
         omotes_orchestrator_if: OrchestratorInterface,
         jobs_broker_if: JobBrokerInterface,
         celery_if: CeleryInterface,
+        postgresql_if: PostgresInterface,
     ):
         """Construct the orchestrator.
 
@@ -49,13 +54,16 @@ class Orchestrator:
         :param jobs_broker_if: Interface to RabbitMQ, Celery side for events and results send by
             workers outside of Celery.
         :param celery_if: Interface to the Celery app.
+        :param postgresql_if: Interface to PostgreSQL to persist job information.
         """
         self.omotes_if = omotes_orchestrator_if
         self.jobs_broker_if = jobs_broker_if
         self.celery_if = celery_if
+        self.postgresql_if = postgresql_if
 
     def start(self) -> None:
         """Start the orchestrator."""
+        self.postgresql_if.start()
         self.celery_if.start()
         self.omotes_if.start()
         self.omotes_if.connect_to_job_submissions(
@@ -72,8 +80,9 @@ class Orchestrator:
     def stop(self) -> None:
         """Stop the orchestrator."""
         self.omotes_if.stop()
-        self.celery_if.stop()
         self.jobs_broker_if.stop()
+        self.celery_if.stop()
+        self.postgresql_if.stop()
 
     def new_job_submitted_handler(self, job_submission: JobSubmission, job: Job) -> None:
         """When a new job is submitted through OMOTES SDK.
@@ -84,11 +93,17 @@ class Orchestrator:
         logger.info(
             "Received new job %s for workflow type %s", job.id, job_submission.workflow_type
         )
-        self.celery_if.start_workflow(
+        celery_id = self.celery_if.start_workflow(
             job.workflow_type,
             job.id,
             job_submission.esdl,
             json_format.MessageToDict(job_submission.params_dict),
+        )
+
+        self.postgresql_if.put_new_job(
+            job_id=job_submission.uuid,
+            celery_id=celery_id,
+            timeout_after=timedelta(milliseconds=job_submission.timeout_ms),
         )
 
     def task_result_received(self, serialized_message: bytes) -> None:
@@ -124,6 +139,7 @@ class Orchestrator:
                     logs=task_result.logs,
                 ),
             )
+            self.postgresql_if.delete_job(job.id)
 
     def task_progress_update(self, serialized_message: bytes) -> None:
         """When a task event is received from a worker through RabbitMQ, Celery side.
@@ -154,6 +170,7 @@ class Orchestrator:
                     status=JobStatusUpdate.JobStatus.RUNNING,
                 ),
             )
+            self.postgresql_if.set_job_running(job.id)
 
         self.omotes_if.send_job_progress_update(
             job,
@@ -200,7 +217,8 @@ def main() -> None:
     orchestrator_if = OrchestratorInterface(config.rabbitmq_omotes, workflow_type_manager)
     celery_if = CeleryInterface(config.celery_config)
     jobs_broker_if = JobBrokerInterface(config.rabbitmq_worker_events)
-    orchestrator = Orchestrator(orchestrator_if, jobs_broker_if, celery_if)
+    postgresql_if = PostgresInterface(config.postgres_config)
+    orchestrator = Orchestrator(orchestrator_if, jobs_broker_if, celery_if, postgresql_if)
 
     stop_event = threading.Event()
 

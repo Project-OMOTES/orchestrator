@@ -23,9 +23,9 @@ classifiers = [
 dependencies = [
     "python-dotenv ~= 1.0.0",
     "dataclass-binder ~= 0.3.4",
-    "sqlalchemy ~= 2.0.23",
-    "psycopg2 ~= 2.9.9",
-    "celery[sqlalchemy] ~= 5.3.6",
+    "sqlalchemy ~= 2.0.27",
+    "psycopg2-binary ~= 2.9.9",
+    "celery ~= 5.3.6",
     "omotes-sdk-python ~= 0.0.10",
 ]
 
