@@ -17,10 +17,10 @@ from omotes_sdk.internal.common.broker_interface import BrokerInterface as JobBr
 from omotes_sdk_protocol.job_pb2 import JobSubmission, JobResult, JobStatusUpdate, JobProgressUpdate
 from omotes_sdk.job import Job
 from omotes_sdk.workflow_type import WorkflowTypeManager, WorkflowType
+from google.protobuf import json_format
 
 from omotes_orchestrator.celery_interface import CeleryInterface
 from omotes_orchestrator.config import OrchestratorConfig
-
 
 load_dotenv(verbose=True)
 logger = logging.getLogger("omotes_orchestrator")
@@ -84,7 +84,12 @@ class Orchestrator:
         logger.info(
             "Received new job %s for workflow type %s", job.id, job_submission.workflow_type
         )
-        self.celery_if.start_workflow(job.workflow_type, job.id, job_submission.esdl)
+        self.celery_if.start_workflow(
+            job.workflow_type,
+            job.id,
+            job_submission.esdl,
+            json_format.MessageToDict(job_submission.params_dict),
+        )
 
     def task_result_received(self, serialized_message: bytes) -> None:
         """When a task result is received from a worker through RabbitMQ, Celery side.
@@ -209,7 +214,7 @@ def main() -> None:
         # ctrl-break key not working
         signal.signal(signal.SIGBREAK, _stop_by_signal)  # type: ignore[attr-defined]
     else:
-        signal.signal(signal.SIGQUIT, _stop_by_signal)
+        signal.signal(signal.SIGQUIT, _stop_by_signal)  # type: ignore[attr-defined]
 
     orchestrator.start()
     stop_event.wait()

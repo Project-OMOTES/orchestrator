@@ -26,7 +26,7 @@ dependencies = [
     "sqlalchemy ~= 2.0.23",
     "psycopg2 ~= 2.9.9",
     "celery[sqlalchemy] ~= 5.3.6",
-    "omotes-sdk-python ~= 0.0.9",
+    "omotes-sdk-python ~= 0.0.10",
 ]
 
 [project.optional-dependencies]
@@ -41,7 +41,8 @@ dev = [
     "pytest-cov ~= 4.0.0",
     "mypy ~= 1.5.1",
     "build ~= 1.0.3",
-    "setuptools-git-versioning < 2"
+    "setuptools-git-versioning < 2",
+    "types-protobuf ~= 4.24.0"
 ]
 
 [project.urls]

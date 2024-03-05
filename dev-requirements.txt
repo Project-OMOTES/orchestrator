@@ -49,6 +49,12 @@ click-repl==0.3.0
     # via
     #   -c requirements.txt
     #   celery
+colorama==0.4.6
+    # via
+    #   -c requirements.txt
+    #   build
+    #   click
+    #   pytest
 coverage[toml]==7.3.2
     # via pytest-cov
 dataclass-binder==0.3.4
@@ -93,11 +99,11 @@ mypy-extensions==1.0.0
     # via
     #   black
     #   mypy
-omotes-sdk-protocol==0.0.6
+omotes-sdk-protocol==0.0.7
     # via
     #   -c requirements.txt
     #   omotes-sdk-python
-omotes-sdk-python==0.0.9
+omotes-sdk-python==0.0.10
     # via
     #   -c requirements.txt
     #   orchestrator (pyproject.toml)
@@ -165,6 +171,8 @@ sqlalchemy==2.0.23
     #   orchestrator (pyproject.toml)
 tomli==2.0.1
     # via black
+types-protobuf==4.24.0.20240302
+    # via orchestrator (pyproject.toml)
 typing-extensions==4.8.0
     # via
     #   -c requirements.txt

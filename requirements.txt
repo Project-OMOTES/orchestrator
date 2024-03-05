@@ -28,6 +28,8 @@ click-plugins==1.1.1
     # via celery
 click-repl==0.3.0
     # via celery
+colorama==0.4.6
+    # via click
 dataclass-binder==0.3.4
     # via orchestrator (pyproject.toml)
 greenlet==3.0.1
@@ -38,9 +40,9 @@ kombu==5.3.4
     # via celery
 multidict==6.0.5
     # via yarl
-omotes-sdk-protocol==0.0.6
+omotes-sdk-protocol==0.0.7
     # via omotes-sdk-python
-omotes-sdk-python==0.0.9
+omotes-sdk-python==0.0.10
     # via orchestrator (pyproject.toml)
 pamqp==3.2.1
     # via aiormq

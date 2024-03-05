@@ -36,17 +36,18 @@ class CeleryInterface:
         self.app.close()
 
     def start_workflow(
-        self, workflow_type: WorkflowType, job_id: uuid.UUID, input_esdl: str
+        self, workflow_type: WorkflowType, job_id: uuid.UUID, input_esdl: str, params_dict: dict
     ) -> None:
         """Start a new workflow.
 
-        :param workflow_type: Type of workflow to start. Currently this translates directly to
+        :param workflow_type: Type of workflow to start. Currently, this translates directly to
             a Celery task with the same name.
         :param job_id: The OMOTES ID of the job.
         :param input_esdl: The ESDL to perform the task on.
+        :param params_dict: The additional, non-ESDL, job parameters.
         """
         self.app.signature(
             workflow_type.workflow_type_name,
-            (job_id, input_esdl),
+            (job_id, input_esdl, params_dict),
             queue=workflow_type.workflow_type_name,
         ).delay()
