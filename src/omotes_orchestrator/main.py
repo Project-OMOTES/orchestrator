@@ -88,7 +88,7 @@ class Orchestrator:
             job.workflow_type,
             job.id,
             job_submission.esdl,
-            json_format.MessageToDict(job_submission.params_dict)
+            json_format.MessageToDict(job_submission.params_dict),
         )
 
     def task_result_received(self, serialized_message: bytes) -> None:
@@ -214,7 +214,7 @@ def main() -> None:
         # ctrl-break key not working
         signal.signal(signal.SIGBREAK, _stop_by_signal)  # type: ignore[attr-defined]
     else:
-        signal.signal(signal.SIGQUIT, _stop_by_signal)
+        signal.signal(signal.SIGQUIT, _stop_by_signal)  # type: ignore[attr-defined]
 
     orchestrator.start()
     stop_event.wait()
