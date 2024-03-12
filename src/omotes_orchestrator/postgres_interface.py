@@ -1,12 +1,11 @@
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 import logging
-from typing import List, Generator
+from typing import Generator, Optional
 from uuid import uuid4
 
 from sqlalchemy import select, update, delete, create_engine, orm
 from sqlalchemy.orm import Session as SQLSession
-from sqlalchemy.orm.strategy_options import load_only
 from sqlalchemy.engine import Engine, URL
 
 from omotes_orchestrator.db_models.job import JobDB, JobStatus
@@ -74,7 +73,7 @@ def initialize_db(application_name: str, config: PostgreSQLConfig):
         url,
         pool_size=20,
         max_overflow=5,
-        echo=True,
+        echo=False,
         connect_args={
             "application_name": application_name,
             "options": "-c lock_timeout=30000 -c statement_timeout=300000",  # 5 minutes
@@ -104,20 +103,31 @@ class PostgresInterface:
     def put_new_job(
         self,
         job_id: uuid4,
-        celery_id: str,
+        workflow_type: str,
         timeout_after: timedelta,
     ) -> None:
         with session_scope(do_expunge=False) as session:
             new_job = JobDB(
                 job_id=job_id,
-                celery_id=celery_id,
-                status=JobStatus.SUBMITTED,
+                workflow_type=workflow_type,
+                status=JobStatus.REGISTERED,
                 registered_at=datetime.now(),
                 timeout_after_ms=round(timeout_after.total_seconds() * 1000),
-                is_cancelled=False,
             )
             session.add(new_job)
         LOGGER.debug("Job %s is submitted as new job in database", job_id)
+
+    def set_job_submitted(self, job_id: uuid4, celery_id: str) -> None:
+        LOGGER.debug("Started job with id '%s'", job_id)
+        with session_scope() as session:
+            stmnt = (
+                update(JobDB)
+                .where(JobDB.job_id == job_id)
+                .values(
+                    status=JobStatus.SUBMITTED, submitted_at=datetime.now(), celery_id=celery_id
+                )
+            )
+            session.execute(stmnt)
 
     def set_job_running(self, job_id: uuid4) -> None:
         LOGGER.debug("Started job with id '%s'", job_id)
@@ -136,14 +146,14 @@ class PostgresInterface:
             job_status = session.scalar(stmnt)
         return job_status
 
-    def get_job_logs(self, job_id: uuid4) -> str:
-        LOGGER.debug("Retrieving job log for job with id '%s'", job_id)
-        with session_scope() as session:
-            stmnt = select(JobDB.logs).where(JobDB.job_id == job_id)
-            job_logs: JobDB = session.scalar(stmnt)
-        return job_logs
+    def get_job_celery_id(self, job_id: uuid4) -> str:
+        LOGGER.debug("Retrieving celery id for job with id '%s'", job_id)
+        with session_scope(do_expunge=True) as session:
+            stmnt = select(JobDB.celery_id).where(JobDB.job_id == job_id)
+            celery_id = session.scalar(stmnt)
+        return celery_id
 
-    def get_job(self, job_id: uuid4) -> JobDB:
+    def get_job(self, job_id: uuid4) -> Optional[JobDB]:
         LOGGER.debug("Retrieving job data for job with id '%s'", job_id)
         session: Session
         with session_scope(do_expunge=True) as session:
@@ -155,12 +165,17 @@ class PostgresInterface:
         LOGGER.debug("Deleting job with id '%s'", job_id)
         session: Session
         with session_scope() as session:
-            stmnt = select(JobDB).where(JobDB.job_id == job_id)
-            job = session.scalars(stmnt).all()
-            if job:
+            job_deleted = self.job_exists(job_id)
+            if job_deleted:
                 stmnt = delete(JobDB).where(JobDB.job_id == job_id)
                 session.execute(stmnt)
-                job_deleted = True
-            else:
-                job_deleted = False
+
         return job_deleted
+
+    def job_exists(self, job_id: uuid4) -> bool:
+        LOGGER.debug("Checking if job with id '%s' exists", job_id)
+        session: Session
+        with session_scope() as session:
+            stmnt = select(1).where(JobDB.job_id == job_id)
+            job_exists = bool(session.scalar(stmnt))
+        return job_exists

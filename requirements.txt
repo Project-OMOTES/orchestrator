@@ -12,7 +12,7 @@ amqp==5.2.0
     # via kombu
 billiard==4.2.0
     # via celery
-celery[sqlalchemy]==5.3.6
+celery==5.3.6
     # via
     #   omotes-sdk-python
     #   orchestrator (pyproject.toml)
@@ -28,8 +28,6 @@ click-plugins==1.1.1
     # via celery
 click-repl==0.3.0
     # via celery
-colorama==0.4.6
-    # via click
 dataclass-binder==0.3.4
     # via orchestrator (pyproject.toml)
 greenlet==3.0.1
@@ -50,7 +48,7 @@ prompt-toolkit==3.0.41
     # via click-repl
 protobuf==4.25.2
     # via omotes-sdk-protocol
-psycopg2==2.9.9
+psycopg2-binary==2.9.9
     # via orchestrator (pyproject.toml)
 python-dateutil==2.8.2
     # via celery
@@ -58,10 +56,8 @@ python-dotenv==1.0.0
     # via orchestrator (pyproject.toml)
 six==1.16.0
     # via python-dateutil
-sqlalchemy==2.0.23
-    # via
-    #   celery
-    #   orchestrator (pyproject.toml)
+sqlalchemy==2.0.28
+    # via orchestrator (pyproject.toml)
 typing-extensions==4.8.0
     # via sqlalchemy
 tzdata==2023.3
