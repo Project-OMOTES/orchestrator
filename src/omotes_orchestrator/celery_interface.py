@@ -2,6 +2,7 @@ import logging
 import uuid
 
 from celery import Celery
+from celery.result import AsyncResult
 
 from omotes_sdk.workflow_type import WorkflowType
 
@@ -51,7 +52,7 @@ class CeleryInterface:
         :param params_dict: The additional, non-ESDL, job parameters.
         :return: Celery task id.
         """
-        started_task = self.app.signature(
+        started_task: AsyncResult = self.app.signature(
             workflow_type.workflow_type_name,
             (job_id, input_esdl, params_dict),
             queue=workflow_type.workflow_type_name,
@@ -63,7 +64,7 @@ class CeleryInterface:
             started_task.task_id,
         )
 
-        return started_task.task_id
+        return started_task.task_id  # type: ignore [no-any-return]
 
     def cancel_workflow(self, celery_id: str) -> None:
         """Cancel a running workflow.

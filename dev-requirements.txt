@@ -100,7 +100,9 @@ multidict==6.0.5
     #   -c requirements.txt
     #   yarl
 mypy==1.5.1
-    # via orchestrator (pyproject.toml)
+    # via
+    #   orchestrator (pyproject.toml)
+    #   sqlalchemy
 mypy-extensions==1.0.0
     # via
     #   black
@@ -174,7 +176,7 @@ six==1.16.0
     #   python-dateutil
 snowballstemmer==2.2.0
     # via pydocstyle
-sqlalchemy==2.0.28
+sqlalchemy[mypy]==2.0.28
     # via
     #   -c requirements.txt
     #   orchestrator (pyproject.toml)

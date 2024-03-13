@@ -113,11 +113,12 @@ class Orchestrator:
         logger.info(
             "Received new job %s for workflow type %s", job.id, job_submission.workflow_type
         )
+        submitted_job_id = uuid.UUID(job_submission.uuid)
 
-        if self.postgresql_if.job_exists(job_submission.uuid):
+        if self.postgresql_if.job_exists(submitted_job_id):
             # This case can happen when something wrong happened during new_job_submitted_handler
             # but the insert in SQL happened.
-            status = self.postgresql_if.get_job_status(job_submission.uuid)
+            status = self.postgresql_if.get_job_status(submitted_job_id)
             submit = status == JobStatusDB.REGISTERED
 
             logger.warning(
@@ -144,9 +145,20 @@ class Orchestrator:
             logger.debug("New job %s has been submitted.", job.id)
 
     def job_cancellation_handler(self, job_cancellation: JobCancel) -> None:
+        """When a cancellation request is received from the SDK.
+
+        Note: This function must be idempotent. It will cancel the Celery task,
+        remove the job from the database and send the last status update and result that the job
+        is cancelled.
+
+        If the job is registered in the database but no celery id is persisted, this is logged
+        as a warning.
+
+        :param job_cancellation: Request to cancel a job.
+        """
         logger.info("Received job cancellation for job %s", job_cancellation.uuid)
 
-        job_db = self.postgresql_if.get_job(job_cancellation.uuid)
+        job_db = self.postgresql_if.get_job(uuid.UUID(job_cancellation.uuid))
 
         if job_db is None:
             logger.warning(
@@ -163,25 +175,35 @@ class Orchestrator:
             )
         else:
             workflow_type = self.workflow_manager.get_workflow_by_name(job_db.workflow_type)
-            job = Job(id=job_db.job_id, workflow_type=workflow_type)
 
-            self.celery_if.cancel_workflow(job_db.celery_id)
-            self.omotes_if.send_job_status_update(
-                job=job,
-                status_update=JobStatusUpdate(
-                    uuid=str(job.id), status=JobStatusUpdate.JobStatus.CANCELLED
-                ),
-            )
-            self.omotes_if.send_job_result(
-                job=job,
-                result=JobResult(
-                    uuid=str(job.id),
-                    result_type=JobResult.ResultType.CANCELLED,
-                    output_esdl=None,
-                    logs="",
-                ),
-            )
-            self.postgresql_if.delete_job(job.id)
+            if workflow_type is None:
+                logger.error(
+                    "Received a request to cancel job %s but workflow %s persisted in "
+                    "database is not configured in this orchestrator.",
+                    job_cancellation.uuid,
+                    job_db.workflow_type,
+                )
+                # TODO Send an error result to SDK
+            else:
+                job = Job(id=job_db.job_id, workflow_type=workflow_type)
+
+                self.celery_if.cancel_workflow(job_db.celery_id)
+                self.omotes_if.send_job_status_update(
+                    job=job,
+                    status_update=JobStatusUpdate(
+                        uuid=str(job.id), status=JobStatusUpdate.JobStatus.CANCELLED
+                    ),
+                )
+                self.omotes_if.send_job_result(
+                    job=job,
+                    result=JobResult(
+                        uuid=str(job.id),
+                        result_type=JobResult.ResultType.CANCELLED,
+                        output_esdl=None,
+                        logs="",
+                    ),
+                )
+                self.postgresql_if.delete_job(job.id)
 
     def task_result_received(self, serialized_message: bytes) -> None:
         """When a task result is received from a worker through RabbitMQ, Celery side.
@@ -203,38 +225,48 @@ class Orchestrator:
             task_result.result_type,
         )
         workflow_type = self.workflow_manager.get_workflow_by_name(task_result.celery_task_type)
-        job = Job(
-            id=uuid.UUID(task_result.job_id),
-            workflow_type=workflow_type,
-        )
-
-        job_db = self.postgresql_if.get_job(job.id)
-
-        # Confirm the job is still relevant.
-        if job_db is None:
-            logger.info("Ignoring result as job %s was already cancelled or completed.", job.id)
-        elif job_db.celery_id != task_result.celery_task_id:
-            logger.warning(
-                "Job %s has a result but was not successfully submitted yet." "Ignoring result.",
-                job.id,
-            )
-
-        elif task_result.result_type == TaskResult.ResultType.SUCCEEDED:
-            logger.info(
-                "Received succeeded result for job %s through task %s",
+        if workflow_type is None:
+            logger.error(
+                "Received a result for %s but celery task %s is not configured in this"
+                "orchestrator as a possible workflow.",
                 task_result.job_id,
-                task_result.celery_task_id,
+                task_result.celery_task_type,
             )
-            self.omotes_if.send_job_result(
-                job=job,
-                result=JobResult(
-                    uuid=str(job.id),
-                    result_type=JobResult.ResultType.SUCCEEDED,
-                    output_esdl=task_result.output_esdl,
-                    logs=task_result.logs,
-                ),
+            # TODO Send an error result to SDK
+        else:
+            job = Job(
+                id=uuid.UUID(task_result.job_id),
+                workflow_type=workflow_type,
             )
-            self.postgresql_if.delete_job(job.id)
+
+            job_db = self.postgresql_if.get_job(job.id)
+
+            # Confirm the job is still relevant.
+            if job_db is None:
+                logger.info("Ignoring result as job %s was already cancelled or completed.", job.id)
+            elif job_db.celery_id != task_result.celery_task_id:
+                logger.warning(
+                    "Job %s has a result but was not successfully submitted yet."
+                    "Ignoring result.",
+                    job.id,
+                )
+
+            elif task_result.result_type == TaskResult.ResultType.SUCCEEDED:
+                logger.info(
+                    "Received succeeded result for job %s through task %s",
+                    task_result.job_id,
+                    task_result.celery_task_id,
+                )
+                self.omotes_if.send_job_result(
+                    job=job,
+                    result=JobResult(
+                        uuid=str(job.id),
+                        result_type=JobResult.ResultType.SUCCEEDED,
+                        output_esdl=task_result.output_esdl,
+                        logs=task_result.logs,
+                    ),
+                )
+                self.postgresql_if.delete_job(job.id)
 
     def task_progress_update(self, serialized_message: bytes) -> None:
         """When a task event is received from a worker through RabbitMQ, Celery side.
@@ -259,55 +291,64 @@ class Orchestrator:
         )
 
         workflow_type = self.workflow_manager.get_workflow_by_name(progress_update.celery_task_type)
-        job = Job(
-            id=uuid.UUID(progress_update.job_id),
-            workflow_type=workflow_type,
-        )
+        if workflow_type is None:
+            logger.error(
+                "Received a progress update for %s but celery task %s is not configured in "
+                "this orchestrator as a possible workflow.",
+                progress_update.job_id,
+                progress_update.celery_task_type,
+            )
+            # TODO Send an error result to SDK
+        else:
+            job = Job(
+                id=uuid.UUID(progress_update.job_id),
+                workflow_type=workflow_type,
+            )
 
-        job_db = self.postgresql_if.get_job(job.id)
+            job_db = self.postgresql_if.get_job(job.id)
 
-        # Confirm the job is still relevant.
-        if job_db is None:
-            logger.info(
-                "Ignoring progress update as job %s was already cancelled or completed and "
-                "cancelling the task",
+            # Confirm the job is still relevant.
+            if job_db is None:
+                logger.info(
+                    "Ignoring progress update as job %s was already cancelled or completed and "
+                    "cancelling the task",
+                    job.id,
+                )
+                self.celery_if.cancel_workflow(progress_update.celery_task_id)
+                return
+            elif job_db.celery_id != progress_update.celery_task_id:
+                logger.warning(
+                    "Job %s has a progress update but was not successfully submitted yet."
+                    "Ignoring progress update and cancelling this task.",
+                    job.id,
+                )
+                self.celery_if.cancel_workflow(progress_update.celery_task_id)
+                return
+
+            if progress_update.progress == 0:  # first progress indicating calculation start
+                logger.debug("Progress update was the first. Setting job %s to RUNNING", job.id)
+                self.omotes_if.send_job_status_update(
+                    job=job,
+                    status_update=JobStatusUpdate(
+                        uuid=str(job.id),
+                        status=JobStatusUpdate.JobStatus.RUNNING,
+                    ),
+                )
+                self.postgresql_if.set_job_running(job.id)
+            logger.debug(
+                "Sending progress update %s (msg: %s) for job %s",
+                progress_update.progress,
+                progress_update.message,
                 job.id,
             )
-            self.celery_if.cancel_workflow(progress_update.celery_task_id)
-            return
-        elif job_db.celery_id != progress_update.celery_task_id:
-            logger.warning(
-                "Job %s has a progress update but was not successfully submitted yet."
-                "Ignoring progress update and cancelling this task.",
-                job.id,
-            )
-            self.celery_if.cancel_workflow(progress_update.celery_task_id)
-            return
-
-        if progress_update.progress == 0:  # first progress indicating calculation start
-            logger.debug("Progress update was the first. Setting job %s to RUNNING", job.id)
-            self.omotes_if.send_job_status_update(
-                job=job,
-                status_update=JobStatusUpdate(
+            self.omotes_if.send_job_progress_update(
+                job,
+                JobProgressUpdate(
                     uuid=str(job.id),
-                    status=JobStatusUpdate.JobStatus.RUNNING,
+                    progress=progress_update.progress,
+                    message=progress_update.message,
                 ),
             )
-            self.postgresql_if.set_job_running(job.id)
-        logger.debug(
-            "Sending progress update %s (msg: %s) for job %s",
-            progress_update.progress,
-            progress_update.message,
-            job.id,
-        )
-        self.omotes_if.send_job_progress_update(
-            job,
-            JobProgressUpdate(
-                uuid=str(job.id),
-                progress=progress_update.progress,
-                message=progress_update.message,
-            ),
-        )
 
 
 def main() -> None:
