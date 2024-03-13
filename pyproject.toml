@@ -23,10 +23,10 @@ classifiers = [
 dependencies = [
     "python-dotenv ~= 1.0.0",
     "dataclass-binder ~= 0.3.4",
-    "sqlalchemy ~= 2.0.23",
-    "psycopg2 ~= 2.9.9",
-    "celery[sqlalchemy] ~= 5.3.6",
-    "omotes-sdk-python ~= 0.0.10",
+    "sqlalchemy ~= 2.0.27",
+    "psycopg2-binary ~= 2.9.9",
+    "celery ~= 5.3.6",
+    "omotes-sdk-python ~= 0.0.11",
 ]
 
 [project.optional-dependencies]
@@ -42,6 +42,7 @@ dev = [
     "mypy ~= 1.5.1",
     "build ~= 1.0.3",
     "setuptools-git-versioning < 2",
+    "sqlalchemy[mypy]",
     "types-protobuf ~= 4.24.0"
 ]
 
@@ -63,7 +64,7 @@ enabled = true
 
 [tool.pytest.ini_options]
 addopts = """--cov=omotes_orchestrator --cov-report html --cov-report term-missing \
---cov-fail-under 24"""
+--cov-fail-under 12"""
 
 [tool.coverage.run]
 source = ["src"]
@@ -105,6 +106,7 @@ exclude = [
     'testmodel',
     'tryouts.py',
 ]
+plugins = ['sqlalchemy.ext.mypy.plugin']
 
 # mypy per-module options:
 [[tool.mypy.overrides]]

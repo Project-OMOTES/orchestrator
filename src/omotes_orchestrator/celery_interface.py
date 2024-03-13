@@ -1,10 +1,15 @@
+import logging
 import uuid
 
 from celery import Celery
+from celery.result import AsyncResult
 
 from omotes_sdk.workflow_type import WorkflowType
 
 from omotes_orchestrator.config import CeleryConfig
+
+
+LOGGER = logging.getLogger("omotes_orchestrator")
 
 
 class CeleryInterface:
@@ -37,7 +42,7 @@ class CeleryInterface:
 
     def start_workflow(
         self, workflow_type: WorkflowType, job_id: uuid.UUID, input_esdl: str, params_dict: dict
-    ) -> None:
+    ) -> str:
         """Start a new workflow.
 
         :param workflow_type: Type of workflow to start. Currently, this translates directly to
@@ -45,9 +50,26 @@ class CeleryInterface:
         :param job_id: The OMOTES ID of the job.
         :param input_esdl: The ESDL to perform the task on.
         :param params_dict: The additional, non-ESDL, job parameters.
+        :return: Celery task id.
         """
-        self.app.signature(
+        started_task: AsyncResult = self.app.signature(
             workflow_type.workflow_type_name,
             (job_id, input_esdl, params_dict),
             queue=workflow_type.workflow_type_name,
         ).delay()
+        LOGGER.debug(
+            "Started celery task %s with job id %s celery id %s",
+            workflow_type.workflow_type_name,
+            job_id,
+            started_task.task_id,
+        )
+
+        return started_task.task_id  # type: ignore [no-any-return]
+
+    def cancel_workflow(self, celery_id: str) -> None:
+        """Cancel a running workflow.
+
+        :param celery_id: The task id Celery associated the workflow with.
+        """
+        self.app.control.revoke(task_id=celery_id, terminate=True, signal="SIGTERM")
+        LOGGER.debug("Revoked job with celery id %s", celery_id)

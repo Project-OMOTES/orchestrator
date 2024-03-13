@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from typing import Optional
 
 from omotes_sdk.internal.common.config import (
     RabbitMQConfig,
@@ -19,12 +20,35 @@ class CeleryConfig:
         self.rabbitmq_config = EnvRabbitMQConfig("CELERY_")
 
 
+class PostgreSQLConfig:
+    """Retrieve PostgreSQL configuration from environment variables."""
+
+    host: str
+    port: int
+    database: str
+    username: Optional[str]
+    password: Optional[str]
+
+    def __init__(self, prefix: str = ""):
+        """Create the PostgreSQL configuration and retrieve values from env vars.
+
+        :param prefix: Prefix to the name environment variables.
+        """
+        self.host = os.environ.get(f"{prefix}POSTGRESQL_HOST", "localhost")
+        self.port = int(os.environ.get(f"{prefix}POSTGRESQL_PORT", "5432"))
+        self.database = os.environ.get(f"{prefix}POSTGRESQL_DATABASE", "public")
+        self.username = os.environ.get(f"{prefix}POSTGRESQL_USERNAME")
+        self.password = os.environ.get(f"{prefix}POSTGRESQL_PASSWORD")
+
+
 @dataclass
 class OrchestratorConfig:
     """Configuration class for orchestrator."""
 
     celery_config: CeleryConfig
     """Configuration for Celery app."""
+    postgres_config: PostgreSQLConfig
+    """Configuration for PostgreSQL database for job persistence."""
     rabbitmq_omotes: RabbitMQConfig
     """Configuration to connect to RabbitMQ on the OMOTES SDK side."""
     rabbitmq_worker_events: RabbitMQConfig
@@ -41,6 +65,7 @@ class OrchestratorConfig:
     def __init__(self) -> None:
         """Construct the orchestrator configuration using environment variables."""
         self.celery_config = CeleryConfig()
+        self.postgres_config = PostgreSQLConfig()
         self.rabbitmq_omotes = EnvRabbitMQConfig("SDK_")
         self.rabbitmq_worker_events = EnvRabbitMQConfig("TASK_")
 
