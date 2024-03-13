@@ -222,6 +222,6 @@ class PostgresInterface:
         """
         LOGGER.debug("Checking if job with id '%s' exists", job_id)
         with session_scope() as session:
-            stmnt = select(1).where(JobDB.job_id.job_id)
+            stmnt = select(1).where(JobDB.job_id == job_id)
             job_exists = bool(session.scalar(stmnt))
         return job_exists
