@@ -81,6 +81,18 @@ kombu==5.3.4
     # via
     #   -c requirements.txt
     #   celery
+mako==1.3.2
+    # via
+    #   -c requirements.txt
+    #   pdoc3
+markdown==3.5.2
+    # via
+    #   -c requirements.txt
+    #   pdoc3
+markupsafe==2.1.5
+    # via
+    #   -c requirements.txt
+    #   mako
 mccabe==0.7.0
     # via flake8
 multidict==6.0.5
@@ -93,11 +105,11 @@ mypy-extensions==1.0.0
     # via
     #   black
     #   mypy
-omotes-sdk-protocol==0.0.7
+omotes-sdk-protocol==0.0.8
     # via
     #   -c requirements.txt
     #   omotes-sdk-python
-omotes-sdk-python==0.0.10
+omotes-sdk-python==0.0.11
     # via
     #   -c requirements.txt
     #   orchestrator (pyproject.toml)
@@ -112,6 +124,10 @@ pamqp==3.2.1
     #   aiormq
 pathspec==0.11.2
     # via black
+pdoc3==0.10.0
+    # via
+    #   -c requirements.txt
+    #   streamcapture
 platformdirs==4.1.0
     # via black
 pluggy==1.3.0
@@ -162,6 +178,10 @@ sqlalchemy==2.0.28
     # via
     #   -c requirements.txt
     #   orchestrator (pyproject.toml)
+streamcapture==1.2.2
+    # via
+    #   -c requirements.txt
+    #   omotes-sdk-python
 tomli==2.0.1
     # via black
 types-protobuf==4.24.0.20240302
