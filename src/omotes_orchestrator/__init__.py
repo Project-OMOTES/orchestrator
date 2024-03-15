@@ -17,8 +17,8 @@ from dotenv import load_dotenv
 
 load_dotenv(verbose=True)
 
-import os
-from omotes_sdk.internal.common.app_logging import setup_logging, LogLevel
+import os  # noqa: E402
+from omotes_sdk.internal.common.app_logging import setup_logging, LogLevel  # noqa: E402
 
 setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL", "INFO")), "omotes_orchestrator")
 setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL_SQL", "WARNING")), "sqlalchemy.engine")
