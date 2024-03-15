@@ -13,8 +13,12 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import logging
-import os
-from omotes_sdk.internal.common.app_logging import setup_logging, LogLevel
+from dotenv import load_dotenv
 
-setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL", "DEBUG")), "omotes_orchestrator")
+load_dotenv(verbose=True)
+
+import os  # noqa: E402
+from omotes_sdk.internal.common.app_logging import setup_logging, LogLevel  # noqa: E402
+
+setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL", "INFO")), "omotes_orchestrator")
 setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL_SQL", "WARNING")), "sqlalchemy.engine")

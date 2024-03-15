@@ -8,7 +8,6 @@ from datetime import timedelta
 from types import FrameType
 from typing import Any, Union
 
-from dotenv import load_dotenv
 from omotes_orchestrator.postgres_interface import PostgresInterface
 from omotes_sdk.internal.orchestrator_worker_events.messages.task_pb2 import (
     TaskResult,
@@ -31,7 +30,6 @@ from omotes_orchestrator.celery_interface import CeleryInterface
 from omotes_orchestrator.config import OrchestratorConfig
 from omotes_orchestrator.db_models.job import JobStatus as JobStatusDB
 
-load_dotenv(verbose=True)
 logger = logging.getLogger("omotes_orchestrator")
 
 
@@ -267,6 +265,27 @@ class Orchestrator:
                     ),
                 )
                 self.postgresql_if.delete_job(job.id)
+            elif task_result.result_type == TaskResult.ResultType.ERROR:
+                logger.info(
+                    "Received error result for job %s through task %s",
+                    task_result.job_id,
+                    task_result.celery_task_id,
+                )
+                self.omotes_if.send_job_result(
+                    job=job,
+                    result=JobResult(
+                        uuid=str(job.id),
+                        result_type=JobResult.ResultType.ERROR,
+                        output_esdl=task_result.output_esdl,
+                        logs=task_result.logs,
+                    ),
+                )
+                self.postgresql_if.delete_job(job.id)
+            else:
+                logger.error(
+                    "Unknown task result %s. Please report and/or implement.",
+                    task_result.result_type,
+                )
 
     def task_progress_update(self, serialized_message: bytes) -> None:
         """When a task event is received from a worker through RabbitMQ, Celery side.
