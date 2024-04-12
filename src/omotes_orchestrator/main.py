@@ -33,6 +33,46 @@ from omotes_orchestrator.db_models.job import JobStatus as JobStatusDB
 logger = logging.getLogger("omotes_orchestrator")
 
 
+class LifeCycleBarrierManager:
+    BARRIER_WAIT_TIMEOUT = 2.0
+    """How long a thread may wait for the barrier in seconds."""
+
+    _barrier_modification_lock: threading.Lock
+    """Lock required before making modifications to `_barriers`."""
+    _barriers: dict[uuid.UUID, threading.Event]
+    """A dictionary of all barriers by id."""
+
+    def __init__(self):
+        self._barrier_modification_lock = threading.Lock()
+        self._barriers = {}
+
+    def ensure_barrier(self, job_id: uuid.UUID) -> threading.Event:
+        # First check if the barrier doesn't before waiting on the modification lock
+        if job_id not in self._barriers:
+            # Barrier doesn't exist yet, queue for the lock to add the barrier.
+            with self._barrier_modification_lock:
+                # Gained access to modify the dict but in the meantime someone else may have added
+                # the barrier. So check again to guarantee this is the only thread to add the
+                # barrier.
+                if job_id not in self._barriers:
+                    self._barriers[job_id] = threading.Event()
+
+        return self._barriers[job_id]
+
+    def set_barrier(self, job_id: uuid.UUID) -> None:
+        barrier = self.ensure_barrier(job_id)
+        barrier.set()
+
+    def wait_for_barrier(self, job_id: uuid.UUID) -> None:
+        barrier = self.ensure_barrier(job_id)
+        barrier.wait(LifeCycleBarrierManager.BARRIER_WAIT_TIMEOUT)
+
+    def cleanup_barrier(self, job_id: uuid.UUID) -> None:
+        with self._barrier_modification_lock:
+            if job_id in self._barriers:
+                del self._barriers[job_id]
+
+
 class Orchestrator:
     """Orchestrator application."""
 
@@ -47,6 +87,7 @@ class Orchestrator:
     """Interface to PostgreSQL."""
     workflow_manager: WorkflowTypeManager
     """Store for all available workflow types."""
+    _init_barriers: LifeCycleBarrierManager
 
     def __init__(
         self,
@@ -70,10 +111,12 @@ class Orchestrator:
         self.celery_if = celery_if
         self.postgresql_if = postgresql_if
         self.workflow_manager = workflow_manager
+        self._init_barriers = LifeCycleBarrierManager()
 
     def start(self) -> None:
         """Start the orchestrator."""
         self.postgresql_if.start()
+        # print(self.postgresql_if.get_all_jobs())
         self.celery_if.start()
         self.omotes_if.start()
         self.omotes_if.connect_to_job_submissions(
@@ -141,6 +184,7 @@ class Orchestrator:
 
             self.postgresql_if.set_job_submitted(job.id, celery_task_id)
             logger.debug("New job %s has been submitted.", job.id)
+            self._init_barriers.set_barrier(submitted_job_id)
 
     def job_cancellation_handler(self, job_cancellation: JobCancel) -> None:
         """When a cancellation request is received from the SDK.
@@ -155,8 +199,10 @@ class Orchestrator:
         :param job_cancellation: Request to cancel a job.
         """
         logger.info("Received job cancellation for job %s", job_cancellation.uuid)
+        job_id = uuid.UUID(job_cancellation.uuid)
 
-        job_db = self.postgresql_if.get_job(uuid.UUID(job_cancellation.uuid))
+        self._init_barriers.wait_for_barrier(job_id)
+        job_db = self.postgresql_if.get_job(job_id)
 
         if job_db is None:
             logger.warning(
@@ -236,6 +282,7 @@ class Orchestrator:
                 id=uuid.UUID(task_result.job_id),
                 workflow_type=workflow_type,
             )
+            self._init_barriers.wait_for_barrier(job.id)
 
             job_db = self.postgresql_if.get_job(job.id)
 
@@ -317,12 +364,12 @@ class Orchestrator:
                 progress_update.job_id,
                 progress_update.celery_task_type,
             )
-            # TODO Send an error result to SDK
         else:
             job = Job(
                 id=uuid.UUID(progress_update.job_id),
                 workflow_type=workflow_type,
             )
+            self._init_barriers.wait_for_barrier(job.id)
 
             job_db = self.postgresql_if.get_job(job.id)
 
@@ -399,6 +446,11 @@ def main() -> None:
             WorkflowType(
                 workflow_type_name="simulator",
                 workflow_type_description_name="High fidelity simulator",
+            ),
+            WorkflowType(
+                workflow_type_name="test_worker",
+                workflow_type_description_name="Used for testing purposes. Should not be used in "
+                "production environments.",
             ),
         ]
     )

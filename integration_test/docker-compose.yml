@@ -1,0 +1,114 @@
+version: "3.8"
+
+networks:
+  omotes:
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    restart: unless-stopped
+    volumes:
+      - "../../computation-engine/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf"
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_ROOT_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_ROOT_PASSWORD}
+    hostname: rabbitmq-nwn
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+    networks:
+      - omotes
+    healthcheck:
+      test: rabbitmq-diagnostics -q listeners --node rabbit@rabbitmq-nwn
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  orchestrator_postgres_db:
+    image: postgres:15.4
+    restart: unless-stopped
+    networks:
+      - omotes
+    ports:
+      - "${POSTGRES_DEV_PORT}:5432"
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_DB: omotes_jobs
+      POSTGRES_USER: ${POSTGRES_ROOT_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "${POSTGRES_ROOT_USER}", "-d", "omotes_jobs" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Skipped in 'docker-compose up', only used in 'setup.sh'
+  orchestrator_postgres_db_upgrade:
+    build: ../../computation-engine/orchestrator_postgres_db_upgrade
+    networks:
+      - omotes
+    environment:
+      POSTGRES_ROOT_USER: ${POSTGRES_ROOT_USER}
+      POSTGRES_ROOT_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
+      POSTGRES_HOST: orchestrator_postgres_db
+      POSTGRES_PORT: 5432
+    depends_on:
+      orchestrator_postgres_db:
+        condition: service_healthy
+    profiles:
+      - manual-dev
+
+  orchestrator:
+    build: ../
+    restart: unless-stopped
+    networks:
+      - omotes
+    environment:
+      CELERY_RABBITMQ_USERNAME: ${RABBITMQ_CELERY_USER_NAME}
+      CELERY_RABBITMQ_PASSWORD: ${RABBITMQ_CELERY_USER_PASSWORD}
+      CELERY_RABBITMQ_HOSTNAME: rabbitmq-nwn
+      CELERY_RABBITMQ_PORT: 5672
+      CELERY_RABBITMQ_VIRTUALHOST: omotes_celery
+
+      SDK_RABBITMQ_USERNAME: ${RABBITMQ_OMOTES_USER_NAME}
+      SDK_RABBITMQ_PASSWORD: ${RABBITMQ_OMOTES_USER_PASSWORD}
+      SDK_RABBITMQ_HOSTNAME: rabbitmq-nwn
+      SDK_RABBITMQ_PORT: 5672
+      SDK_RABBITMQ_VIRTUALHOST: omotes
+
+      TASK_RABBITMQ_USERNAME: ${RABBITMQ_CELERY_USER_NAME}
+      TASK_RABBITMQ_PASSWORD: ${RABBITMQ_CELERY_USER_PASSWORD}
+      TASK_RABBITMQ_HOSTNAME: rabbitmq-nwn
+      TASK_RABBITMQ_PORT: 5672
+      TASK_RABBITMQ_VIRTUALHOST: omotes_celery
+
+      POSTGRESQL_HOST: orchestrator_postgres_db
+      POSTGRESQL_PORT: 5432
+      POSTGRESQL_DATABASE: omotes_jobs
+      POSTGRESQL_USERNAME: ${POSTGRES_ORCHESTRATOR_USER_NAME}
+      POSTGRESQL_PASSWORD: ${POSTGRES_ORCHESTRATOR_USER_PASSWORD}
+      LOG_LEVEL: DEBUG
+      LOG_LEVEL_SQL: DEBUG
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      orchestrator_postgres_db:
+        condition: service_healthy
+
+  test_worker:
+    build: ./test_worker
+    restart: unless-stopped
+    deploy:
+      replicas: 3
+    networks:
+      - omotes
+    environment:
+      RABBITMQ_HOSTNAME: rabbitmq-nwn
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_CELERY_USER_NAME}
+      RABBITMQ_PASSWORD: ${RABBITMQ_CELERY_USER_PASSWORD}
+      RABBITMQ_VIRTUALHOST: omotes_celery
+      LOG_LEVEL: INFO
+    depends_on:
+      rabbitmq:
+        condition: service_healthy

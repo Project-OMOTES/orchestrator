@@ -1,0 +1,17 @@
+.github/
+.venv/
+.vscode/
+ci/
+doc/
+htmlcov/
+integration_test/
+unit_test/
+.coverage
+.env
+.env-template
+.taplo.toml
+CHANGELOG.md
+CONTRIBUTING.md
+run.sh
+run_windows.sh
+test-results.xml
