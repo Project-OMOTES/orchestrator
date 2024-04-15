@@ -28,12 +28,25 @@ from google.protobuf import json_format
 
 from omotes_orchestrator.celery_interface import CeleryInterface
 from omotes_orchestrator.config import OrchestratorConfig
-from omotes_orchestrator.db_models.job import JobStatus as JobStatusDB
+from omotes_orchestrator.db_models.job import JobStatus as JobStatusDB, JobDB
 
 logger = logging.getLogger("omotes_orchestrator")
 
 
+class BarrierTimeoutException(BaseException):
+    """Exception which is thrown if the barrier is not ready within the specified time."""
+
+    pass
+
+
 class LifeCycleBarrierManager:
+    """Maintain a (processing) barrier per job until a lifecycle is finished.
+
+    Is used currently to prevent processing of status, progress and result updates until
+    a job is completely submitted. Will block any thread that calls `wait_for_barrier` until
+    the barrier is set.
+    """
+
     BARRIER_WAIT_TIMEOUT = 2.0
     """How long a thread may wait for the barrier in seconds."""
 
@@ -42,11 +55,17 @@ class LifeCycleBarrierManager:
     _barriers: dict[uuid.UUID, threading.Event]
     """A dictionary of all barriers by id."""
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Construct the lifecycle barrier manager."""
         self._barrier_modification_lock = threading.Lock()
         self._barriers = {}
 
     def ensure_barrier(self, job_id: uuid.UUID) -> threading.Event:
+        """Ensure that a barrier is available for the job with `job_id`.
+
+        :param: job_id: The id of the job to ensure that a barrier is available.
+        :return: The barrier that is either created or was already available.
+        """
         # First check if the barrier doesn't before waiting on the modification lock
         if job_id not in self._barriers:
             # Barrier doesn't exist yet, queue for the lock to add the barrier.
@@ -60,14 +79,39 @@ class LifeCycleBarrierManager:
         return self._barriers[job_id]
 
     def set_barrier(self, job_id: uuid.UUID) -> None:
+        """Set the barrier for the job to ready.
+
+        Any threads that were waiting are notified they can continue and future threads will not
+        wait.
+
+        :param job_id: The id of the job for which the barrier may be set to ready.
+        """
         barrier = self.ensure_barrier(job_id)
         barrier.set()
 
     def wait_for_barrier(self, job_id: uuid.UUID) -> None:
+        """Wait until the barrier for the job is ready.
+
+        May wait up to `BARRIER_WAIT_TIMEOUT` seconds
+
+        :param job_id: The id of the job for which to wait until the barrier is ready.
+        :raises BarrierTimeoutException: If the barrier is not ready within BARRIER_WAIT_TIMEOUT,
+            this exception is thrown.
+        """
         barrier = self.ensure_barrier(job_id)
-        barrier.wait(LifeCycleBarrierManager.BARRIER_WAIT_TIMEOUT)
+        result = barrier.wait(LifeCycleBarrierManager.BARRIER_WAIT_TIMEOUT)
+        if not result:
+            raise BarrierTimeoutException(f"Barrier for job {job_id} was not ready on time.")
 
     def cleanup_barrier(self, job_id: uuid.UUID) -> None:
+        """Remove the barrier from memory.
+
+        This function should be called when no more threads will ever need the lifecycle barrier
+        anymore. If no barrier exists for `job_id` nothing is done so it is safe to call it
+        multiple times.
+
+        :param job_id: The id of the job for which the barrier should be cleaned up.
+        """
         with self._barrier_modification_lock:
             if job_id in self._barriers:
                 del self._barriers[job_id]
@@ -113,10 +157,16 @@ class Orchestrator:
         self.workflow_manager = workflow_manager
         self._init_barriers = LifeCycleBarrierManager()
 
+    def _resume_init_barriers(self, all_jobs: list[JobDB]) -> None:
+        for job in all_jobs:
+            if job.status != JobStatusDB.REGISTERED:
+                self._init_barriers.set_barrier(job.job_id)
+
     def start(self) -> None:
         """Start the orchestrator."""
         self.postgresql_if.start()
-        # print(self.postgresql_if.get_all_jobs())
+        self._resume_init_barriers(self.postgresql_if.get_all_jobs())
+
         self.celery_if.start()
         self.omotes_if.start()
         self.omotes_if.connect_to_job_submissions(
@@ -249,6 +299,14 @@ class Orchestrator:
                 )
                 self.postgresql_if.delete_job(job.id)
 
+    def _cleanup_job(self, job_id: uuid.UUID) -> None:
+        """Cleanup any references to job with id `job_id`.
+
+        :param job_id: The job to clean up after.
+        """
+        self.postgresql_if.delete_job(job_id)
+        self._init_barriers.cleanup_barrier(job_id)
+
     def task_result_received(self, serialized_message: bytes) -> None:
         """When a task result is received from a worker through RabbitMQ, Celery side.
 
@@ -311,7 +369,7 @@ class Orchestrator:
                         logs=task_result.logs,
                     ),
                 )
-                self.postgresql_if.delete_job(job.id)
+                self._cleanup_job(job.id)
             elif task_result.result_type == TaskResult.ResultType.ERROR:
                 logger.info(
                     "Received error result for job %s through task %s",
@@ -327,7 +385,7 @@ class Orchestrator:
                         logs=task_result.logs,
                     ),
                 )
-                self.postgresql_if.delete_job(job.id)
+                self._cleanup_job(job.id)
             else:
                 logger.error(
                     "Unknown task result %s. Please report and/or implement.",

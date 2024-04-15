@@ -87,8 +87,8 @@ services:
       POSTGRESQL_DATABASE: omotes_jobs
       POSTGRESQL_USERNAME: ${POSTGRES_ORCHESTRATOR_USER_NAME}
       POSTGRESQL_PASSWORD: ${POSTGRES_ORCHESTRATOR_USER_PASSWORD}
-      LOG_LEVEL: DEBUG
-      LOG_LEVEL_SQL: DEBUG
+      LOG_LEVEL: WARNING
+      LOG_LEVEL_SQL: WARNING
     depends_on:
       rabbitmq:
         condition: service_healthy

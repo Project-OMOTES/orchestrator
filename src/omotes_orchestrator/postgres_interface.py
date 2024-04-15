@@ -224,6 +224,10 @@ class PostgresInterface:
         return job_exists
 
     def get_all_jobs(self) -> list[JobDB]:
+        """Retrieve a list of all jobs in the database.
+
+        :return: List of all jobs.
+        """
         with session_scope() as session:
             stmnt = select(JobDB)
             jobs = list(session.scalars(stmnt).all())
