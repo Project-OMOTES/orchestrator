@@ -427,9 +427,12 @@ class Orchestrator:
                 id=uuid.UUID(progress_update.job_id),
                 workflow_type=workflow_type,
             )
-            self._init_barriers.wait_for_barrier(job.id)
 
             job_db = self.postgresql_if.get_job(job.id)
+
+            if job_db and job_db.status == JobStatusDB.REGISTERED:
+                self._init_barriers.wait_for_barrier(job.id)
+                job_db = self.postgresql_if.get_job(job.id)
 
             # Confirm the job is still relevant.
             if job_db is None:
