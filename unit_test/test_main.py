@@ -6,7 +6,8 @@ from unittest.mock import patch
 from uuid import UUID
 
 from omotes_orchestrator.config import OrchestratorConfig
-from omotes_orchestrator.main import LifeCycleBarrierManager, BarrierTimeoutException
+from omotes_orchestrator.main import LifeCycleBarrierManager, BarrierTimeoutException, \
+    MissingBarrierException
 
 
 class LifeCycleBarrierManagerTest(unittest.TestCase):
@@ -67,6 +68,7 @@ class LifeCycleBarrierManagerTest(unittest.TestCase):
         # Arrange
         barrier_manager = LifeCycleBarrierManager()
         job_id = UUID("ab995599-a117-47b6-8da5-5d9488900858")
+        barrier_manager.ensure_barrier(job_id)
 
         # Act / Assert
         barrier_manager.set_barrier(job_id)
@@ -76,6 +78,7 @@ class LifeCycleBarrierManagerTest(unittest.TestCase):
         # Arrange
         barrier_manager = LifeCycleBarrierManager()
         job_id = UUID("ab995599-a117-47b6-8da5-5d9488900858")
+        barrier_manager.ensure_barrier(job_id)
 
         def set_barrier() -> None:
             time.sleep(0.5)
@@ -91,6 +94,7 @@ class LifeCycleBarrierManagerTest(unittest.TestCase):
         # Arrange
         barrier_manager = LifeCycleBarrierManager()
         job_id = UUID("ab995599-a117-47b6-8da5-5d9488900858")
+        barrier_manager.ensure_barrier(job_id)
 
         # Overwrite the timeout temporarily so the test doesn't take too long.
         previous_timeout = LifeCycleBarrierManager.BARRIER_WAIT_TIMEOUT
@@ -102,6 +106,24 @@ class LifeCycleBarrierManagerTest(unittest.TestCase):
 
         # Cleanup
         LifeCycleBarrierManager.BARRIER_WAIT_TIMEOUT = previous_timeout
+
+    def test__wait_barrier__barrier_is_not_created(self) -> None:
+        # Arrange
+        barrier_manager = LifeCycleBarrierManager()
+        job_id = UUID("ab995599-a117-47b6-8da5-5d9488900858")
+
+        # Act / Assert
+        with self.assertRaises(MissingBarrierException):
+            barrier_manager.wait_for_barrier(job_id)
+
+    def test__set_barrier__barrier_is_not_created(self) -> None:
+        # Arrange
+        barrier_manager = LifeCycleBarrierManager()
+        job_id = UUID("ab995599-a117-47b6-8da5-5d9488900858")
+
+        # Act / Assert
+        with self.assertRaises(MissingBarrierException):
+            barrier_manager.set_barrier(job_id)
 
     def test__cleanup_barrier__cleaning_non_existing_barrier(self) -> None:
         # Arrange

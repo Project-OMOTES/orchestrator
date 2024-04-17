@@ -39,6 +39,12 @@ class BarrierTimeoutException(BaseException):
     pass
 
 
+class MissingBarrierException(BaseException):
+    """Exception which is thrown if a barrier is waited on or set while the barrier is missing."""
+
+    pass
+
+
 class LifeCycleBarrierManager:
     """Maintain a (processing) barrier per job until a lifecycle is finished.
 
@@ -78,6 +84,12 @@ class LifeCycleBarrierManager:
 
         return self._barriers[job_id]
 
+    def _get_barrier(self, job_id: uuid.UUID) -> threading.Event:
+        """Retrieve the barrier and throw exception if the barrier is not available."""
+        if job_id not in self._barriers:
+            raise MissingBarrierException(f"Lifecycle barrier is missing for job {job_id}")
+        return self._barriers[job_id]
+
     def set_barrier(self, job_id: uuid.UUID) -> None:
         """Set the barrier for the job to ready.
 
@@ -85,8 +97,9 @@ class LifeCycleBarrierManager:
         wait.
 
         :param job_id: The id of the job for which the barrier may be set to ready.
+        :raises MissingBarrierException: Thrown if the barrier is not ensured or already cleaned up.
         """
-        barrier = self.ensure_barrier(job_id)
+        barrier = self._get_barrier(job_id)
         barrier.set()
 
     def wait_for_barrier(self, job_id: uuid.UUID) -> None:
@@ -97,8 +110,9 @@ class LifeCycleBarrierManager:
         :param job_id: The id of the job for which to wait until the barrier is ready.
         :raises BarrierTimeoutException: If the barrier is not ready within BARRIER_WAIT_TIMEOUT,
             this exception is thrown.
+        :raises MissingBarrierException: Thrown if the barrier is not ensured or already cleaned up.
         """
-        barrier = self.ensure_barrier(job_id)
+        barrier = self._get_barrier(job_id)
         result = barrier.wait(LifeCycleBarrierManager.BARRIER_WAIT_TIMEOUT)
         if not result:
             raise BarrierTimeoutException(f"Barrier for job {job_id} was not ready on time.")
@@ -158,8 +172,13 @@ class Orchestrator:
         self._init_barriers = LifeCycleBarrierManager()
 
     def _resume_init_barriers(self, all_jobs: list[JobDB]) -> None:
+        """Resume the INIT lifecycle barriers for all jobs while starting the orchestrator.
+
+        :param all_jobs: All jobs that are known while the orchestrator is starting up.
+        """
         for job in all_jobs:
             if job.status != JobStatusDB.REGISTERED:
+                self._init_barriers.ensure_barrier(job.job_id)
                 self._init_barriers.set_barrier(job.job_id)
 
     def start(self) -> None:
@@ -225,6 +244,7 @@ class Orchestrator:
             submit = True
 
         if submit:
+            self._init_barriers.ensure_barrier(submitted_job_id)
             celery_task_id = self.celery_if.start_workflow(
                 job.workflow_type,
                 job.id,
@@ -297,7 +317,7 @@ class Orchestrator:
                         logs="",
                     ),
                 )
-                self.postgresql_if.delete_job(job.id)
+                self._cleanup_job(job_id)
 
     def _cleanup_job(self, job_id: uuid.UUID) -> None:
         """Cleanup any references to job with id `job_id`.
@@ -349,9 +369,11 @@ class Orchestrator:
                 logger.info("Ignoring result as job %s was already cancelled or completed.", job.id)
             elif job_db.celery_id != task_result.celery_task_id:
                 logger.warning(
-                    "Job %s has a result but was not successfully submitted yet."
-                    "Ignoring result.",
+                    "Job %s has a result but was is not the celery task that was expected."
+                    "Ignoring result. Expected celery task id %s but received celery task id %s",
                     job.id,
+                    job_db.celery_id,
+                    task_result.celery_task_id,
                 )
 
             elif task_result.result_type == TaskResult.ResultType.SUCCEEDED:
