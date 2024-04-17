@@ -66,7 +66,7 @@ class LifeCycleBarrierManager:
         :param: job_id: The id of the job to ensure that a barrier is available.
         :return: The barrier that is either created or was already available.
         """
-        # First check if the barrier doesn't before waiting on the modification lock
+        # First check if the barrier doesn't exist before waiting on the modification lock
         if job_id not in self._barriers:
             # Barrier doesn't exist yet, queue for the lock to add the barrier.
             with self._barrier_modification_lock:
