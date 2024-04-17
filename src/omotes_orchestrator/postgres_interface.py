@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import logging
 from typing import Generator, Optional
 
-from sqlalchemy import select, update, delete, create_engine, orm
+from sqlalchemy import select, update, create_engine, orm
 from sqlalchemy.orm import Session as SQLSession
 from sqlalchemy.engine import Engine, URL
 
@@ -13,27 +13,22 @@ from omotes_orchestrator.config import PostgreSQLConfig
 
 LOGGER = logging.getLogger("omotes_orchestrator")
 
-session_factory = orm.sessionmaker()
+session_factory = orm.sessionmaker(expire_on_commit=False)
 Session = orm.scoped_session(session_factory)
 
 
 @contextmanager
-def session_scope(do_expunge: bool = False) -> Generator[SQLSession, None, None]:
+def session_scope() -> Generator[SQLSession, None, None]:
     """Provide a transactional scope around a series of operations.
 
     Ensures that the session is committed and closed. Exceptions raised within the 'with' block
     using this contextmanager should be handled in the with block itself. They will not be caught
     by the 'except' here.
 
-    :param do_expunge: Expunge the records cached in this session. Set this to True for SELECT
-        queries and keep it False for INSERTS or UPDATES.
-    :return: A single SQL session.
+    :return: A single SQL session with which SQL queries may be executed.
     """
     try:
         yield Session()
-
-        if do_expunge:
-            Session.expunge_all()
         Session.commit()
     except Exception as e:
         # Only the exceptions raised by session.commit above are caught here
@@ -119,7 +114,7 @@ class PostgresInterface:
         :param workflow_type: Name of the workflow this job will execute.
         :param timeout_after: Maximum duration before the job is terminated due to timing out.
         """
-        with session_scope(do_expunge=False) as session:
+        with session_scope() as session:
             new_job = JobDB(
                 job_id=job_id,
                 workflow_type=workflow_type,
@@ -168,7 +163,7 @@ class PostgresInterface:
         :return: Current job status.
         """
         LOGGER.debug("Retrieving job status for job with id '%s'", job_id)
-        with session_scope(do_expunge=True) as session:
+        with session_scope() as session:
             stmnt = select(JobDB.status).where(JobDB.job_id == job_id)
             job_status = session.scalar(stmnt)
         return job_status
@@ -182,7 +177,7 @@ class PostgresInterface:
         :return: Current celery task id if available.
         """
         LOGGER.debug("Retrieving celery id for job with id '%s'", job_id)
-        with session_scope(do_expunge=True) as session:
+        with session_scope() as session:
             stmnt = select(JobDB.celery_id).where(JobDB.job_id == job_id)
             celery_id = session.scalar(stmnt)
         return celery_id
@@ -194,7 +189,7 @@ class PostgresInterface:
         :return: Job if it is available in the database.
         """
         LOGGER.debug("Retrieving job data for job with id '%s'", job_id)
-        with session_scope(do_expunge=True) as session:
+        with session_scope() as session:
             stmnt = select(JobDB).where(JobDB.job_id == job_id)
             job = session.scalar(stmnt)
         return job
@@ -207,12 +202,14 @@ class PostgresInterface:
         """
         LOGGER.debug("Deleting job with id '%s'", job_id)
         with session_scope() as session:
-            job_deleted = self.job_exists(job_id)
-            if job_deleted:
-                stmnt = delete(JobDB).where(JobDB.job_id == job_id)
-                session.execute(stmnt)
+            stmnt = select(JobDB).where(JobDB.job_id == job_id)
+            job = session.scalar(stmnt)
+            result = False
+            if job:
+                session.delete(job)
+                result = True
 
-        return job_deleted
+        return result
 
     def job_exists(self, job_id: uuid.UUID) -> bool:
         """Check if the job exists in the database.
@@ -225,3 +222,13 @@ class PostgresInterface:
             stmnt = select(1).where(JobDB.job_id == job_id)
             job_exists = bool(session.scalar(stmnt))
         return job_exists
+
+    def get_all_jobs(self) -> list[JobDB]:
+        """Retrieve a list of all jobs in the database.
+
+        :return: List of all jobs.
+        """
+        with session_scope() as session:
+            stmnt = select(JobDB)
+            jobs = list(session.scalars(stmnt).all())
+        return jobs

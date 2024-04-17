@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Optional
 
 import sqlalchemy as db
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.dialects.postgresql import UUID
 
 Base = declarative_base()
