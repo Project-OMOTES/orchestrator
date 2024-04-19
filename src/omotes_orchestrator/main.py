@@ -512,7 +512,8 @@ def main() -> None:
     workflow_type_manager = WorkflowTypeManager(
         possible_workflows=[
             WorkflowType(
-                workflow_type_name="grow_optimizer", workflow_type_description_name="Grow Optimizer"
+                workflow_type_name="grow_optimizer_default",
+                workflow_type_description_name="Grow Optimizer default workflow",
             ),
             WorkflowType(
                 workflow_type_name="grow_simulator", workflow_type_description_name="Grow Simulator"
@@ -522,9 +523,8 @@ def main() -> None:
                 workflow_type_description_name="Grow Optimizer without heat losses",
             ),
             WorkflowType(
-                workflow_type_name="grow_optimizer_no_heat_losses_discounted_capex",
-                workflow_type_description_name="Grow Optimizer without heat losses and a "
-                "discounted CAPEX",
+                workflow_type_name="grow_optimizer_with_pressure",
+                workflow_type_description_name="Grow Optimizer with pump pressures.",
             ),
             WorkflowType(
                 workflow_type_name="simulator",
