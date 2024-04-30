@@ -1,5 +1,6 @@
 import multiprocessing
 import os
+import sys
 import threading
 import time
 import uuid
@@ -148,9 +149,11 @@ def main():
             print(f"Process {i} had errors:")
             for error in errors:
                 print(error)
+            print()
+            sys.exit(1)
         else:
             print(f"Process {i} had no errors")
-        print()
+            print()
 
 
 if __name__ == "__main__":

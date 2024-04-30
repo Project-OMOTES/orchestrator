@@ -1,0 +1,25 @@
+version: "3.8"
+
+networks:
+  omotes:
+    external: true
+
+services:
+  orchestrator:
+    build: ${ORCHESTRATOR_DIR}
+    image: !reset
+
+  test_worker:
+    build: ${TEST_WORKER_DIR}
+    restart: unless-stopped
+    deploy:
+      replicas: 3
+    networks:
+      - omotes
+    environment:
+      RABBITMQ_HOSTNAME: rabbitmq-nwn
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_CELERY_USER_NAME}
+      RABBITMQ_PASSWORD: ${RABBITMQ_CELERY_USER_PASSWORD}
+      RABBITMQ_VIRTUALHOST: omotes_celery
+      LOG_LEVEL: INFO

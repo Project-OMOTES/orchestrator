@@ -2,4 +2,6 @@
 
 . .venv/bin/activate
 
-PYTHONPATH="src/" python -m omotes_orchestrator.main
+export PYTHONPATH="src/"
+
+src/start.sh

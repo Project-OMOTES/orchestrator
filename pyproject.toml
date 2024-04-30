@@ -27,6 +27,7 @@ dependencies = [
     "psycopg2-binary ~= 2.9.9",
     "celery ~= 5.3.6",
     "omotes-sdk-python ~= 0.0.12",
+    "alembic ~= 1.13.1",
 ]
 
 [project.optional-dependencies]

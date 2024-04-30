@@ -1,33 +1,18 @@
 #!/bin/bash
 
-. .env
+CURRENT_WORKDIR=$PWD
+COMPUTATION_ENGINE="../computation_engine"
+ENV_FILE="${CURRENT_WORKDIR}/.env"
+DOCKER_COMPOSE_FILE="${COMPUTATION_ENGINE}/docker-compose.yml"
+DOCKER_COMPOSE_OVERRIDE_FILE="./docker-compose.override.yml"
 
-DOCKER_COMPOSE="docker compose"
+cp ${COMPUTATION_ENGINE}/.env-template ${ENV_FILE}
 
-# Deploy postgres omotes schema
-$DOCKER_COMPOSE up -d --wait orchestrator_postgres_db
-$DOCKER_COMPOSE exec orchestrator_postgres_db psql -d postgres -c 'CREATE DATABASE omotes_jobs;'
-$DOCKER_COMPOSE exec orchestrator_postgres_db psql -d omotes_jobs -c "CREATE USER ${POSTGRES_ORCHESTRATOR_USER_NAME} WITH PASSWORD '${POSTGRES_ORCHESTRATOR_USER_PASSWORD}';"
-$DOCKER_COMPOSE exec orchestrator_postgres_db psql -d omotes_jobs -c "ALTER USER ${POSTGRES_ORCHESTRATOR_USER_NAME} WITH PASSWORD '${POSTGRES_ORCHESTRATOR_USER_PASSWORD}';"
-$DOCKER_COMPOSE exec orchestrator_postgres_db psql -d omotes_jobs -c "GRANT ALL PRIVILEGES ON DATABASE omotes_jobs TO ${POSTGRES_ORCHESTRATOR_USER_NAME};"
-$DOCKER_COMPOSE exec orchestrator_postgres_db psql -d omotes_jobs -c "GRANT ALL PRIVILEGES ON SCHEMA public TO ${POSTGRES_ORCHESTRATOR_USER_NAME};"
-$DOCKER_COMPOSE exec orchestrator_postgres_db psql -d omotes_jobs -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${POSTGRES_ORCHESTRATOR_USER_NAME};"
-$DOCKER_COMPOSE exec orchestrator_postgres_db psql -d omotes_jobs -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${POSTGRES_ORCHESTRATOR_USER_NAME};"
-$DOCKER_COMPOSE exec orchestrator_postgres_db psql -d omotes_jobs -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${POSTGRES_ORCHESTRATOR_USER_NAME};"
-$DOCKER_COMPOSE exec orchestrator_postgres_db psql -d omotes_jobs -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${POSTGRES_ORCHESTRATOR_USER_NAME};"
+${COMPUTATION_ENGINE}/scripts/setup_orchestrator_postgres_db.sh ${ENV_FILE} ${DOCKER_COMPOSE_FILE}
+${COMPUTATION_ENGINE}/scripts/setup_rabbitmq.sh ${ENV_FILE} ${DOCKER_COMPOSE_FILE}
+echo "Using docker compose files: ${DOCKER_COMPOSE_FILE} ${DOCKER_COMPOSE_OVERRIDE_FILE}"
 
-# Upgrade omotes tables
-$DOCKER_COMPOSE build orchestrator_postgres_db_upgrade
-$DOCKER_COMPOSE run --rm orchestrator_postgres_db_upgrade
+export ORCHESTRATOR_DIR="${CURRENT_WORKDIR}/../"
+export TEST_WORKER_DIR="${CURRENT_WORKDIR}/test_worker/"
 
-# Setup rabbitmq
-$DOCKER_COMPOSE up -d --wait rabbitmq
-$DOCKER_COMPOSE exec rabbitmq rabbitmqctl add_vhost omotes
-$DOCKER_COMPOSE exec rabbitmq rabbitmqctl set_permissions --vhost omotes root ".*" ".*" ".*"
-$DOCKER_COMPOSE exec rabbitmq rabbitmqctl add_vhost omotes_celery
-$DOCKER_COMPOSE exec rabbitmq rabbitmqctl set_permissions --vhost omotes_celery root ".*" ".*" ".*"
-
-$DOCKER_COMPOSE exec rabbitmq rabbitmqctl add_user --vhost omotes "${RABBITMQ_OMOTES_USER_NAME}" "${RABBITMQ_OMOTES_USER_PASSWORD}"
-$DOCKER_COMPOSE exec rabbitmq rabbitmqctl set_permissions --vhost omotes "${RABBITMQ_OMOTES_USER_NAME}" ".*" ".*" ".*"
-$DOCKER_COMPOSE exec rabbitmq rabbitmqctl add_user --vhost omotes_celery "${RABBITMQ_CELERY_USER_NAME}" "${RABBITMQ_CELERY_USER_PASSWORD}"
-$DOCKER_COMPOSE exec rabbitmq rabbitmqctl set_permissions --vhost omotes_celery "${RABBITMQ_CELERY_USER_NAME}" ".*" ".*" ".*"
+docker compose -f ${DOCKER_COMPOSE_FILE} -f ${DOCKER_COMPOSE_OVERRIDE_FILE} --env-file ${ENV_FILE} up --build -d orchestrator test_worker

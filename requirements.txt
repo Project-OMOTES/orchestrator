@@ -8,6 +8,8 @@ aio-pika==9.3.1
     # via omotes-sdk-python
 aiormq==6.7.7
     # via aio-pika
+alembic==1.13.1
+    # via orchestrator (pyproject.toml)
 amqp==5.2.0
     # via kombu
 billiard==4.2.0
@@ -37,7 +39,9 @@ idna==3.6
 kombu==5.3.4
     # via celery
 mako==1.3.2
-    # via pdoc3
+    # via
+    #   alembic
+    #   pdoc3
 markdown==3.5.2
     # via pdoc3
 markupsafe==2.1.5
@@ -65,11 +69,15 @@ python-dotenv==1.0.0
 six==1.16.0
     # via python-dateutil
 sqlalchemy==2.0.28
-    # via orchestrator (pyproject.toml)
+    # via
+    #   alembic
+    #   orchestrator (pyproject.toml)
 streamcapture==1.2.2
     # via omotes-sdk-python
 typing-extensions==4.8.0
-    # via sqlalchemy
+    # via
+    #   alembic
+    #   sqlalchemy
 tzdata==2023.3
     # via celery
 vine==5.1.0
