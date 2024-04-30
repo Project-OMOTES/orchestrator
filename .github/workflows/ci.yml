@@ -12,7 +12,8 @@ jobs:
     name: Setup
     steps:
       - uses: actions/checkout@v3
-        submodules: 'recursive'
+        with:
+          submodules: 'recursive'
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
@@ -39,7 +40,8 @@ jobs:
         python-version: [ "3.11" ]
     steps:
     - uses: actions/checkout@v3
-      submodules: 'recursive'
+      with:
+        submodules: 'recursive'
     - name: Restore venv
       uses: actions/download-artifact@v4
       with:
@@ -60,7 +62,8 @@ jobs:
         python-version: [ "3.11" ]
     steps:
     - uses: actions/checkout@v3
-      submodules: 'recursive'
+      with:
+        submodules: 'recursive'
     - name: Restore venv
       uses: actions/download-artifact@v4
       with:
@@ -83,7 +86,8 @@ jobs:
         python-version: [ "3.11" ]
     steps:
     - uses: actions/checkout@v3
-      submodules: 'recursive'
+      with:
+        submodules: 'recursive'
     - name: Restore venv
       uses: actions/download-artifact@v4
       with:
@@ -127,7 +131,8 @@ jobs:
         python-version: [ "3.11" ]
     steps:
     - uses: actions/checkout@v3
-      submodules: 'recursive'
+      with:
+        submodules: 'recursive'
     - name: Restore venv
       uses: actions/download-artifact@v4
       with:
