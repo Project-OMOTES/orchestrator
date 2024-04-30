@@ -16,3 +16,7 @@ export ORCHESTRATOR_DIR="${CURRENT_WORKDIR}/../"
 export TEST_WORKER_DIR="${CURRENT_WORKDIR}/test_worker/"
 
 docker compose -f ${DOCKER_COMPOSE_FILE} -f ${DOCKER_COMPOSE_OVERRIDE_FILE} --env-file ${ENV_FILE} up --build -d orchestrator test_worker
+
+python3 -m venv ./.venv/
+. .venv/bin/activate
+pip install -r requirements.txt
