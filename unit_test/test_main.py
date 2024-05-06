@@ -11,6 +11,7 @@ from omotes_sdk.job import Job
 from omotes_sdk.workflow_type import WorkflowType
 from omotes_sdk_protocol.job_pb2 import JobSubmission
 from google.protobuf import json_format
+from google.protobuf.struct_pb2 import Struct
 
 from omotes_orchestrator.config import OrchestratorConfig
 from omotes_orchestrator.db_models.job import JobStatus
@@ -188,7 +189,7 @@ class OrchestratorTest(unittest.TestCase):
         timeout = 3000
         workflow_type = "some-workflow"
         esdl = "Some-esdl"
-        params_dict = {}
+        params_dict = Struct()
         job_submission = JobSubmission(
             uuid=str(job_id),
             timeout_ms=timeout,
@@ -248,7 +249,7 @@ class OrchestratorTest(unittest.TestCase):
         timeout = 3000
         workflow_type = "some-workflow"
         esdl = "Some-esdl"
-        params_dict = {}
+        params_dict = Struct()
         job_submission = JobSubmission(
             uuid=str(job_id),
             timeout_ms=timeout,
@@ -302,7 +303,7 @@ class OrchestratorTest(unittest.TestCase):
         timeout = 3000
         workflow_type = "some-workflow"
         esdl = "Some-esdl"
-        params_dict = {}
+        params_dict = Struct()
         job_submission = JobSubmission(
             uuid=str(job_id),
             timeout_ms=timeout,
@@ -351,7 +352,7 @@ class OrchestratorTest(unittest.TestCase):
         timeout = 3000
         workflow_type = "some-workflow"
         esdl = "Some-esdl"
-        params_dict = {}
+        params_dict = Struct()
         job_submission = JobSubmission(
             uuid=str(job_id),
             timeout_ms=timeout,
