@@ -27,9 +27,9 @@ LOG = logging.getLogger("integration_test_job_submitter")
 rabbitmq_config = RabbitMQConfig(
     username=os.environ["RABBITMQ_OMOTES_USER_NAME"],
     password=os.environ["RABBITMQ_OMOTES_USER_PASSWORD"],
-    virtual_host="omotes",
-    host="localhost",
-    port=5672,
+    virtual_host=os.environ["RABBITMQ_VIRTUALHOST"],
+    host=os.environ["RABBITMQ_HOST"],
+    port=int(os.environ["RABBITMQ_PORT"]),
 )
 
 
