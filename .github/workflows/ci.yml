@@ -67,7 +67,7 @@ jobs:
     - name: run integration tests
       run: |
         cd integration_test
-        ./test_integration.sh
+        ./ci/test_integration.sh
 
   test:
     name: Test
