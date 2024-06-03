@@ -2,9 +2,8 @@
 
 . ci/_config.sh
 
-export LOG_LEVEL=WARNING
-
 cp ${COMPUTATION_ENGINE}/.env-template ${ENV_FILE}
+sed -i 's/LOG_LEVEL=[a-z]*/LOG_LEVEL=WARNING/gi' ${ENV_FILE}
 
 docker compose -f ${DOCKER_COMPOSE_FILE} -f ${DOCKER_COMPOSE_OVERRIDE_FILE} --env-file ${ENV_FILE} down -v
 

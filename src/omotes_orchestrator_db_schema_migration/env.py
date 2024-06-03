@@ -2,6 +2,7 @@ import os
 from logging.config import fileConfig
 
 from alembic import context
+from omotes_sdk import setup_logging, LogLevel
 from sqlalchemy import create_engine
 from sqlalchemy.engine import URL
 from dotenv import load_dotenv
@@ -22,6 +23,9 @@ if config.config_file_name is not None:
 
 
 from omotes_orchestrator.db_models.job import Base
+
+setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL", "INFO")), "omotes_orchestrator")
+setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL_SQL", "WARNING")), "sqlalchemy.engine")
 
 target_metadata = [Base.metadata]
 
@@ -78,7 +82,7 @@ def run_migrations_online() -> None:
         url,
         pool_size=20,
         max_overflow=5,
-        echo=True,
+        echo=False,
         connect_args={
             "application_name": "omotes_orchestrator_db_upgrade_dev",
             "options": "-c lock_timeout=30000 -c statement_timeout=300000",  # 5 minutes

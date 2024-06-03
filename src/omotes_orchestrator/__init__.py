@@ -22,3 +22,5 @@ from omotes_sdk.internal.common.app_logging import setup_logging, LogLevel  # no
 
 setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL", "INFO")), "omotes_orchestrator")
 setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL_SQL", "WARNING")), "sqlalchemy.engine")
+setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL", "INFO")), "celery")
+setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL", "INFO")), "amqp")
