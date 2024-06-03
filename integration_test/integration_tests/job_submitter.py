@@ -4,6 +4,7 @@ import os
 import sys
 import threading
 import time
+import traceback
 import uuid
 
 from dotenv import load_dotenv
@@ -103,6 +104,7 @@ class JobSubmitter:
         # )
 
     def run(self):
+        omotes_if = None
         try:
             omotes_if = OmotesInterface(rabbitmq_config)
             omotes_if.start()
@@ -134,9 +136,13 @@ class JobSubmitter:
             for job_id in self.active_jobs.keys():
                 if job_id not in self.result_jobs:
                     self.errors.append(f"Did not receive a result for job {job_id}")
+        except Exception as e:
+            self.errors.append(f"An exception happened: {e}")
+            traceback.print_exception(e)
         finally:
             time.sleep(1)
-            omotes_if.stop()
+            if omotes_if:
+                omotes_if.stop()
 
 
 def main_process(i) -> list[str]:
@@ -147,6 +153,7 @@ def main_process(i) -> list[str]:
 
 
 def main():
+    print("Starting with job submissions for integration test.")
     with multiprocessing.Pool(PROCESS_COUNT) as p:
         all_errors: list[list[str]] = p.map(main_process, range(PROCESS_COUNT))
 
