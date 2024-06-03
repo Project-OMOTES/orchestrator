@@ -162,28 +162,42 @@ class LifeCycleBarrierManagerTest(unittest.TestCase):
 
 
 class OrchestratorTest(unittest.TestCase):
-    def test__new_job_submitted_handler__fully_new_job(self) -> None:
-        # Arrange
-        omotes_orchestrator_if = Mock()
-        jobs_broker_if = Mock()
-        celery_if = Mock()
-        celery_if.start_workflow.return_value = "celery_id"
-        postgresql_if = Mock()
-        postgresql_if.job_exists.return_value = False
-        workflow_manager = Mock()
+    class MockedOrchestrator:
+        def __init__(self):
+            self.omotes_orchestrator_if = Mock()
+            self.jobs_broker_if = Mock()
+            self.celery_if = Mock()
+            self.celery_if.start_workflow.return_value = "celery_id"
+            self.postgresql_if = Mock()
 
-        with patch(
-            "omotes_orchestrator.main.LifeCycleBarrierManager"
-        ) as life_cycle_barrier_manager_class_mock:
-            orchestrator = Orchestrator(
-                omotes_orchestrator_if=omotes_orchestrator_if,
-                jobs_broker_if=jobs_broker_if,
-                celery_if=celery_if,
-                postgresql_if=postgresql_if,
-                workflow_manager=workflow_manager,
+            self.workflow_manager = Mock()
+
+            with patch(
+                "omotes_orchestrator.main.LifeCycleBarrierManager"
+            ) as life_cycle_barrier_manager_class_mock:
+                self.orchestrator = Orchestrator(
+                    omotes_orchestrator_if=self.omotes_orchestrator_if,
+                    jobs_broker_if=self.jobs_broker_if,
+                    celery_if=self.celery_if,
+                    postgresql_if=self.postgresql_if,
+                    workflow_manager=self.workflow_manager,
+                )
+
+            self.life_cycle_barrier_manager_obj_mock = (
+                life_cycle_barrier_manager_class_mock.return_value
             )
 
-        life_cycle_barrier_manager_obj_mock = life_cycle_barrier_manager_class_mock.return_value
+    def test__new_job_submitted_handler__fully_new_job(self) -> None:
+        # Arrange
+        mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
+        orchestrator = mocked_orchestrator.orchestrator
+        celery_if = mocked_orchestrator.celery_if
+        postgresql_if = mocked_orchestrator.postgresql_if
+        life_cycle_barrier_manager_obj_mock = (
+            mocked_orchestrator.life_cycle_barrier_manager_obj_mock
+        )
+
+        postgresql_if.job_exists.return_value = False
 
         job_id = uuid.uuid4()
         timeout = 3000
@@ -223,27 +237,16 @@ class OrchestratorTest(unittest.TestCase):
 
     def test__new_job_submitted_handler__already_registered_but_not_submitted_new_job(self) -> None:
         # Arrange
-        omotes_orchestrator_if = Mock()
-        jobs_broker_if = Mock()
-        celery_if = Mock()
-        celery_if.start_workflow.return_value = "celery_id"
-        postgresql_if = Mock()
+        mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
+        orchestrator = mocked_orchestrator.orchestrator
+        celery_if = mocked_orchestrator.celery_if
+        postgresql_if = mocked_orchestrator.postgresql_if
+        life_cycle_barrier_manager_obj_mock = (
+            mocked_orchestrator.life_cycle_barrier_manager_obj_mock
+        )
+
         postgresql_if.get_job_status.return_value = JobStatus.REGISTERED
         postgresql_if.job_exists.return_value = True
-        workflow_manager = Mock()
-
-        with patch(
-            "omotes_orchestrator.main.LifeCycleBarrierManager"
-        ) as life_cycle_barrier_manager_class_mock:
-            orchestrator = Orchestrator(
-                omotes_orchestrator_if=omotes_orchestrator_if,
-                jobs_broker_if=jobs_broker_if,
-                celery_if=celery_if,
-                postgresql_if=postgresql_if,
-                workflow_manager=workflow_manager,
-            )
-
-        life_cycle_barrier_manager_obj_mock = life_cycle_barrier_manager_class_mock.return_value
 
         job_id = uuid.uuid4()
         timeout = 3000
@@ -278,26 +281,15 @@ class OrchestratorTest(unittest.TestCase):
 
     def test__new_job_submitted_handler__already_registered_and_submitted_new_job(self) -> None:
         # Arrange
-        omotes_orchestrator_if = Mock()
-        jobs_broker_if = Mock()
-        celery_if = Mock()
-        postgresql_if = Mock()
+        mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
+        orchestrator = mocked_orchestrator.orchestrator
+        celery_if = mocked_orchestrator.celery_if
+        postgresql_if = mocked_orchestrator.postgresql_if
+        life_cycle_barrier_manager_obj_mock = (
+            mocked_orchestrator.life_cycle_barrier_manager_obj_mock
+        )
         postgresql_if.get_job_status.return_value = JobStatus.SUBMITTED
         postgresql_if.job_exists.return_value = True
-        workflow_manager = Mock()
-
-        with patch(
-            "omotes_orchestrator.main.LifeCycleBarrierManager"
-        ) as life_cycle_barrier_manager_class_mock:
-            orchestrator = Orchestrator(
-                omotes_orchestrator_if=omotes_orchestrator_if,
-                jobs_broker_if=jobs_broker_if,
-                celery_if=celery_if,
-                postgresql_if=postgresql_if,
-                workflow_manager=workflow_manager,
-            )
-
-        life_cycle_barrier_manager_obj_mock = life_cycle_barrier_manager_class_mock.return_value
 
         job_id = uuid.uuid4()
         timeout = 3000
@@ -327,26 +319,15 @@ class OrchestratorTest(unittest.TestCase):
 
     def test__new_job_submitted_handler__already_running_new_job(self) -> None:
         # Arrange
-        omotes_orchestrator_if = Mock()
-        jobs_broker_if = Mock()
-        celery_if = Mock()
-        postgresql_if = Mock()
+        mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
+        orchestrator = mocked_orchestrator.orchestrator
+        celery_if = mocked_orchestrator.celery_if
+        postgresql_if = mocked_orchestrator.postgresql_if
+        life_cycle_barrier_manager_obj_mock = (
+            mocked_orchestrator.life_cycle_barrier_manager_obj_mock
+        )
         postgresql_if.get_job_status.return_value = JobStatus.RUNNING
         postgresql_if.job_exists.return_value = True
-        workflow_manager = Mock()
-
-        with patch(
-            "omotes_orchestrator.main.LifeCycleBarrierManager"
-        ) as life_cycle_barrier_manager_class_mock:
-            orchestrator = Orchestrator(
-                omotes_orchestrator_if=omotes_orchestrator_if,
-                jobs_broker_if=jobs_broker_if,
-                celery_if=celery_if,
-                postgresql_if=postgresql_if,
-                workflow_manager=workflow_manager,
-            )
-
-        life_cycle_barrier_manager_obj_mock = life_cycle_barrier_manager_class_mock.return_value
 
         job_id = uuid.uuid4()
         timeout = 3000
