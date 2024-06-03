@@ -4,4 +4,5 @@
 
 export PYTHONPATH="src/"
 
-src/start.sh
+cd src/
+./start.sh
