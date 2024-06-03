@@ -163,7 +163,7 @@ class LifeCycleBarrierManagerTest(unittest.TestCase):
 
 class OrchestratorTest(unittest.TestCase):
     class MockedOrchestrator:
-        def __init__(self):
+        def __init__(self) -> None:
             self.omotes_orchestrator_if = Mock()
             self.jobs_broker_if = Mock()
             self.celery_if = Mock()
