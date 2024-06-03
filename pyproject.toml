@@ -83,7 +83,7 @@ ignore = [
 ]
 per-file-ignores = [
     '__init__.py:F401',
-    './unit_test/*:D100,D101,D102,D103'
+    './unit_test/*:D100,D101,D102,D103,D106,D107'
 ]
 max-line-length = 100
 count = true
