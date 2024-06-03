@@ -5,5 +5,4 @@ succeed successfully.
 # Setup and run the test
 First, ensure that the `computation-engine-at-orchestrator` repository is available as a submodule.
 
-1. Run `./setup.sh`
-2. Run `./run.sh` to start the test.
+1. Run `./ci/test_integration.sh` to setup and start the test.
