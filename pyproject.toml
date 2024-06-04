@@ -19,6 +19,9 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Mathematics",
     "Topic :: Scientific/Engineering :: Physics",
 ]
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
 
 dependencies = [
     "python-dotenv ~= 1.0.0",
@@ -27,6 +30,7 @@ dependencies = [
     "psycopg2-binary ~= 2.9.9",
     "celery ~= 5.3.6",
     "omotes-sdk-python ~= 0.0.12",
+    "alembic ~= 1.13.1",
 ]
 
 [project.optional-dependencies]
@@ -64,7 +68,7 @@ enabled = true
 
 [tool.pytest.ini_options]
 addopts = """--cov=omotes_orchestrator --cov-report html --cov-report term-missing \
---cov-fail-under 12"""
+--cov-fail-under 58"""
 
 [tool.coverage.run]
 source = ["src"]
@@ -82,7 +86,7 @@ ignore = [
 ]
 per-file-ignores = [
     '__init__.py:F401',
-    './unit_test/*:D100,D101,D102,D103'
+    './unit_test/*:D100,D101,D102,D103,D106,D107'
 ]
 max-line-length = 100
 count = true

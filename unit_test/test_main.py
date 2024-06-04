@@ -1,13 +1,26 @@
 import threading
 import time
 import unittest
+import uuid
+from datetime import timedelta
 from multiprocessing.pool import ThreadPool, MapResult
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 from uuid import UUID
 
+from omotes_sdk.job import Job
+from omotes_sdk.workflow_type import WorkflowType
+from omotes_sdk_protocol.job_pb2 import JobSubmission
+from google.protobuf import json_format
+from google.protobuf.struct_pb2 import Struct
+
 from omotes_orchestrator.config import OrchestratorConfig
-from omotes_orchestrator.main import LifeCycleBarrierManager, BarrierTimeoutException, \
-    MissingBarrierException
+from omotes_orchestrator.db_models.job import JobStatus
+from omotes_orchestrator.main import (
+    LifeCycleBarrierManager,
+    BarrierTimeoutException,
+    MissingBarrierException,
+    Orchestrator,
+)
 
 
 class LifeCycleBarrierManagerTest(unittest.TestCase):
@@ -146,6 +159,201 @@ class LifeCycleBarrierManagerTest(unittest.TestCase):
 
         # Assert
         self.assertNotIn(job_id, barrier_manager._barriers)
+
+
+class OrchestratorTest(unittest.TestCase):
+    class MockedOrchestrator:
+        def __init__(self) -> None:
+            self.omotes_orchestrator_if = Mock()
+            self.jobs_broker_if = Mock()
+            self.celery_if = Mock()
+            self.celery_if.start_workflow.return_value = "celery_id"
+            self.postgresql_if = Mock()
+
+            self.workflow_manager = Mock()
+
+            with patch(
+                "omotes_orchestrator.main.LifeCycleBarrierManager"
+            ) as life_cycle_barrier_manager_class_mock:
+                self.orchestrator = Orchestrator(
+                    omotes_orchestrator_if=self.omotes_orchestrator_if,
+                    jobs_broker_if=self.jobs_broker_if,
+                    celery_if=self.celery_if,
+                    postgresql_if=self.postgresql_if,
+                    workflow_manager=self.workflow_manager,
+                )
+
+            self.life_cycle_barrier_manager_obj_mock = (
+                life_cycle_barrier_manager_class_mock.return_value
+            )
+
+    def test__new_job_submitted_handler__fully_new_job(self) -> None:
+        # Arrange
+        mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
+        orchestrator = mocked_orchestrator.orchestrator
+        celery_if = mocked_orchestrator.celery_if
+        postgresql_if = mocked_orchestrator.postgresql_if
+        life_cycle_barrier_manager_obj_mock = (
+            mocked_orchestrator.life_cycle_barrier_manager_obj_mock
+        )
+
+        postgresql_if.job_exists.return_value = False
+
+        job_id = uuid.uuid4()
+        timeout = 3000
+        workflow_type = "some-workflow"
+        esdl = "Some-esdl"
+        params_dict = Struct()
+        job_submission = JobSubmission(
+            uuid=str(job_id),
+            timeout_ms=timeout,
+            workflow_type=workflow_type,
+            esdl=esdl,
+            params_dict=params_dict,
+        )
+        job = Job(id=job_id, workflow_type=WorkflowType(workflow_type, "some-descr"))
+
+        # Act
+        orchestrator.new_job_submitted_handler(job_submission, job)
+
+        # Assert
+        expected_params_dict = json_format.MessageToDict(job_submission.params_dict)
+        expected_celery_id = "celery_id"
+        expected_timeout = timedelta(milliseconds=timeout)
+
+        life_cycle_barrier_manager_obj_mock.ensure_barrier.assert_called_once_with(job_id)
+        life_cycle_barrier_manager_obj_mock.set_barrier.assert_called_once_with(job_id)
+        celery_if.start_workflow.assert_called_once_with(
+            job.workflow_type, job.id, job_submission.esdl, expected_params_dict
+        )
+        postgresql_if.job_exists.assert_called_once_with(job_id)
+        postgresql_if.get_job_status.assert_not_called()
+        postgresql_if.set_job_submitted.called_called_once_with(job_id, expected_celery_id)
+        postgresql_if.put_new_job.assert_called_once_with(
+            job_id=job.id,
+            workflow_type=job_submission.workflow_type,
+            timeout_after=expected_timeout,
+        )
+
+    def test__new_job_submitted_handler__already_registered_but_not_submitted_new_job(self) -> None:
+        # Arrange
+        mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
+        orchestrator = mocked_orchestrator.orchestrator
+        celery_if = mocked_orchestrator.celery_if
+        postgresql_if = mocked_orchestrator.postgresql_if
+        life_cycle_barrier_manager_obj_mock = (
+            mocked_orchestrator.life_cycle_barrier_manager_obj_mock
+        )
+
+        postgresql_if.get_job_status.return_value = JobStatus.REGISTERED
+        postgresql_if.job_exists.return_value = True
+
+        job_id = uuid.uuid4()
+        timeout = 3000
+        workflow_type = "some-workflow"
+        esdl = "Some-esdl"
+        params_dict = Struct()
+        job_submission = JobSubmission(
+            uuid=str(job_id),
+            timeout_ms=timeout,
+            workflow_type=workflow_type,
+            esdl=esdl,
+            params_dict=params_dict,
+        )
+        job = Job(id=job_id, workflow_type=WorkflowType(workflow_type, "some-descr"))
+
+        # Act
+        orchestrator.new_job_submitted_handler(job_submission, job)
+
+        # Assert
+        expected_params_dict = json_format.MessageToDict(job_submission.params_dict)
+        expected_celery_id = "celery_id"
+
+        life_cycle_barrier_manager_obj_mock.ensure_barrier.assert_called_once_with(job_id)
+        life_cycle_barrier_manager_obj_mock.set_barrier.assert_called_once_with(job_id)
+        celery_if.start_workflow.assert_called_once_with(
+            job.workflow_type, job.id, job_submission.esdl, expected_params_dict
+        )
+        postgresql_if.job_exists.assert_called_once_with(job_id)
+        postgresql_if.get_job_status.assert_called_once_with(job_id)
+        postgresql_if.set_job_submitted.called_called_once_with(job_id, expected_celery_id)
+        postgresql_if.put_new_job.assert_not_called()
+
+    def test__new_job_submitted_handler__already_registered_and_submitted_new_job(self) -> None:
+        # Arrange
+        mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
+        orchestrator = mocked_orchestrator.orchestrator
+        celery_if = mocked_orchestrator.celery_if
+        postgresql_if = mocked_orchestrator.postgresql_if
+        life_cycle_barrier_manager_obj_mock = (
+            mocked_orchestrator.life_cycle_barrier_manager_obj_mock
+        )
+        postgresql_if.get_job_status.return_value = JobStatus.SUBMITTED
+        postgresql_if.job_exists.return_value = True
+
+        job_id = uuid.uuid4()
+        timeout = 3000
+        workflow_type = "some-workflow"
+        esdl = "Some-esdl"
+        params_dict = Struct()
+        job_submission = JobSubmission(
+            uuid=str(job_id),
+            timeout_ms=timeout,
+            workflow_type=workflow_type,
+            esdl=esdl,
+            params_dict=params_dict,
+        )
+        job = Job(id=job_id, workflow_type=WorkflowType(workflow_type, "some-descr"))
+
+        # Act
+        orchestrator.new_job_submitted_handler(job_submission, job)
+
+        # Assert
+        life_cycle_barrier_manager_obj_mock.ensure_barrier.assert_not_called()
+        life_cycle_barrier_manager_obj_mock.set_barrier.assert_not_called()
+        celery_if.start_workflow.assert_not_called()
+        postgresql_if.job_exists.assert_called_once_with(job_id)
+        postgresql_if.get_job_status.assert_called_once_with(job_id)
+        postgresql_if.set_job_submitted.assert_not_called()
+        postgresql_if.put_new_job.assert_not_called()
+
+    def test__new_job_submitted_handler__already_running_new_job(self) -> None:
+        # Arrange
+        mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
+        orchestrator = mocked_orchestrator.orchestrator
+        celery_if = mocked_orchestrator.celery_if
+        postgresql_if = mocked_orchestrator.postgresql_if
+        life_cycle_barrier_manager_obj_mock = (
+            mocked_orchestrator.life_cycle_barrier_manager_obj_mock
+        )
+        postgresql_if.get_job_status.return_value = JobStatus.RUNNING
+        postgresql_if.job_exists.return_value = True
+
+        job_id = uuid.uuid4()
+        timeout = 3000
+        workflow_type = "some-workflow"
+        esdl = "Some-esdl"
+        params_dict = Struct()
+        job_submission = JobSubmission(
+            uuid=str(job_id),
+            timeout_ms=timeout,
+            workflow_type=workflow_type,
+            esdl=esdl,
+            params_dict=params_dict,
+        )
+        job = Job(id=job_id, workflow_type=WorkflowType(workflow_type, "some-descr"))
+
+        # Act
+        orchestrator.new_job_submitted_handler(job_submission, job)
+
+        # Assert
+        life_cycle_barrier_manager_obj_mock.ensure_barrier.assert_not_called()
+        life_cycle_barrier_manager_obj_mock.set_barrier.assert_not_called()
+        celery_if.start_workflow.assert_not_called()
+        postgresql_if.job_exists.assert_called_once_with(job_id)
+        postgresql_if.get_job_status.assert_called_once_with(job_id)
+        postgresql_if.set_job_submitted.assert_not_called()
+        postgresql_if.put_new_job.assert_not_called()
 
 
 class MyTest(unittest.TestCase):

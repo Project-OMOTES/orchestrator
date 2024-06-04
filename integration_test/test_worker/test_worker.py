@@ -1,7 +1,13 @@
 import logging
+import os
 import time
 
+from omotes_sdk import LogLevel, setup_logging
 from omotes_sdk.internal.worker.worker import initialize_worker, UpdateProgressHandler
+
+setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL", "INFO")), "test_worker")
+setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL", "INFO")), "celery")
+setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL", "INFO")), "amqp")
 
 logger = logging.getLogger("test_worker")
 

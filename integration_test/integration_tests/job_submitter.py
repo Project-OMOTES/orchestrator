@@ -1,10 +1,14 @@
+import logging
 import multiprocessing
 import os
+import sys
 import threading
 import time
+import traceback
 import uuid
 
 from dotenv import load_dotenv
+from omotes_sdk import setup_logging, LogLevel
 from omotes_sdk.config import RabbitMQConfig
 from omotes_sdk.omotes_interface import (
     OmotesInterface,
@@ -17,12 +21,16 @@ from omotes_sdk.workflow_type import WorkflowType
 
 load_dotenv(verbose=True)
 
+setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL", "INFO")), "integration_test_job_submitter")
+
+LOG = logging.getLogger("integration_test_job_submitter")
+
 rabbitmq_config = RabbitMQConfig(
     username=os.environ["RABBITMQ_OMOTES_USER_NAME"],
     password=os.environ["RABBITMQ_OMOTES_USER_PASSWORD"],
-    virtual_host="omotes",
-    host="localhost",
-    port=5672,
+    virtual_host=os.environ["RABBITMQ_VIRTUALHOST"],
+    host=os.environ["RABBITMQ_HOST"],
+    port=int(os.environ["RABBITMQ_PORT"]),
 )
 
 
@@ -57,7 +65,7 @@ class JobSubmitter:
         else:
             with self._result_jobs_lock:
                 self.result_jobs[job.id] = result
-            print(f"Received result for {job.id}")
+            LOG.info(f"Received result for {job.id}")
 
             if job.id not in self.active_jobs:
                 error = (
@@ -69,16 +77,16 @@ class JobSubmitter:
 
             all_counted = False
             if JOB_COUNT_PER_PROCESS == len(self.result_jobs):
-                print("Received the expected amount of result!")
+                LOG.debug("Received the expected amount of result!")
                 all_counted = True
 
             all_received = False
             if list(self.active_jobs.keys()).sort() == list(self.result_jobs.keys()).sort():
-                print("All active jobs have received at least 1 result.")
+                LOG.debug("All active jobs have received at least 1 result.")
                 all_received = True
 
             if all_received and all_counted:
-                print("Apparently I am done now!")
+                LOG.info("Apparently I am done now!")
                 self.done.set()
 
     def handle_on_status_update(self, job: Job, status_update: JobStatusUpdate):
@@ -96,6 +104,7 @@ class JobSubmitter:
         # )
 
     def run(self):
+        omotes_if = None
         try:
             omotes_if = OmotesInterface(rabbitmq_config)
             omotes_if.start()
@@ -127,12 +136,16 @@ class JobSubmitter:
             for job_id in self.active_jobs.keys():
                 if job_id not in self.result_jobs:
                     self.errors.append(f"Did not receive a result for job {job_id}")
+        except Exception as e:
+            self.errors.append(f"An exception happened: {e}")
+            traceback.print_exception(e)
         finally:
             time.sleep(1)
-            omotes_if.stop()
+            if omotes_if:
+                omotes_if.stop()
 
 
-def main_process(i):
+def main_process(i) -> list[str]:
     submitter = JobSubmitter()
     submitter.run()
 
@@ -140,17 +153,23 @@ def main_process(i):
 
 
 def main():
+    print("Starting with job submissions for integration test.")
     with multiprocessing.Pool(PROCESS_COUNT) as p:
-        all_errors = p.map(main_process, range(PROCESS_COUNT))
+        all_errors: list[list[str]] = p.map(main_process, range(PROCESS_COUNT))
 
     for i, errors in enumerate(all_errors):
         if errors:
             print(f"Process {i} had errors:")
             for error in errors:
                 print(error)
+            print()
         else:
             print(f"Process {i} had no errors")
-        print()
+            print()
+
+    if any(any(x) for x in all_errors):
+        print("Error(s) was found.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
