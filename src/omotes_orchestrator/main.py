@@ -283,7 +283,7 @@ class Orchestrator:
         if job_db is None:
             logger.warning(
                 "Received a request to cancel job %s but it was already completed, "
-                "cancelled or removed or was not yet submitted.",
+                "cancelled, removed or was not yet submitted.",
                 job_cancellation.uuid,
             )
         elif job_db.celery_id is None:
