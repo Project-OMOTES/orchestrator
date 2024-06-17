@@ -264,20 +264,26 @@ class Orchestrator:
         is cancelled.
 
         If the job is registered in the database but no celery id is persisted, this is logged
-        as a warning.
+        as a warning. Rationale: The queue through which cancellations are received is a different
+        queue from where workers post results. Therefore, this function cannot rely on any ordering
+        of when a job is submitted, a progress update is received or when a result is received.
+        In other words, cancellations are only possible when the cancellation is received when the
+        job is submitted or active. In all other cases, the cancellation is ignored.
 
         :param job_cancellation: Request to cancel a job.
         """
         logger.info("Received job cancellation for job %s", job_cancellation.uuid)
         job_id = uuid.UUID(job_cancellation.uuid)
 
-        self._init_barriers.wait_for_barrier(job_id)
         job_db = self.postgresql_if.get_job(job_id)
+        if job_db and job_db.status == JobStatusDB.REGISTERED:
+            self._init_barriers.wait_for_barrier(job_id)
+            job_db = self.postgresql_if.get_job(job_id)
 
         if job_db is None:
             logger.warning(
                 "Received a request to cancel job %s but it was already completed, "
-                "cancelled or removed.",
+                "cancelled, removed or was not yet submitted.",
                 job_cancellation.uuid,
             )
         elif job_db.celery_id is None:
@@ -360,22 +366,23 @@ class Orchestrator:
                 id=uuid.UUID(task_result.job_id),
                 workflow_type=workflow_type,
             )
-            self._init_barriers.wait_for_barrier(job.id)
 
             job_db = self.postgresql_if.get_job(job.id)
+            if job_db and job_db.status == JobStatusDB.REGISTERED:
+                self._init_barriers.wait_for_barrier(job.id)
+                job_db = self.postgresql_if.get_job(job.id)
 
             # Confirm the job is still relevant.
             if job_db is None:
                 logger.info("Ignoring result as job %s was already cancelled or completed.", job.id)
             elif job_db.celery_id != task_result.celery_task_id:
                 logger.warning(
-                    "Job %s has a result but was is not the celery task that was expected."
+                    "Job %s has a result but it is not from the celery task that was expected."
                     "Ignoring result. Expected celery task id %s but received celery task id %s",
                     job.id,
                     job_db.celery_id,
                     task_result.celery_task_id,
                 )
-
             elif task_result.result_type == TaskResult.ResultType.SUCCEEDED:
                 logger.info(
                     "Received succeeded result for job %s through task %s",
@@ -428,8 +435,8 @@ class Orchestrator:
         progress_update = TaskProgressUpdate()
         progress_update.ParseFromString(serialized_message)
         logger.debug(
-            "Received progress update for job %s (celery task id %s) to progress %s with message: "
-            "%s",
+            "Received progress update for job %s (celery task id %s) to progress %s with "
+            "message: %s",
             progress_update.job_id,
             progress_update.celery_task_id,
             progress_update.progress,
@@ -451,7 +458,6 @@ class Orchestrator:
             )
 
             job_db = self.postgresql_if.get_job(job.id)
-
             if job_db and job_db.status == JobStatusDB.REGISTERED:
                 self._init_barriers.wait_for_barrier(job.id)
                 job_db = self.postgresql_if.get_job(job.id)
@@ -467,9 +473,13 @@ class Orchestrator:
                 return
             elif job_db.celery_id != progress_update.celery_task_id:
                 logger.warning(
-                    "Job %s has a progress update but was not successfully submitted yet."
-                    "Ignoring progress update and cancelling this task.",
+                    "Job %s has a progress update but it is not from the celery task that was "
+                    "expected. Ignoring result. Expected celery task id %s but received celery "
+                    "task id %s. Cancelling celery task with id %s",
                     job.id,
+                    job_db.celery_id,
+                    progress_update.celery_task_id,
+                    progress_update.celery_task_id,
                 )
                 self.celery_if.cancel_workflow(progress_update.celery_task_id)
                 return

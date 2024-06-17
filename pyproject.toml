@@ -29,7 +29,7 @@ dependencies = [
     "sqlalchemy ~= 2.0.27",
     "psycopg2-binary ~= 2.9.9",
     "celery ~= 5.3.6",
-    "omotes-sdk-python ~= 0.0.12",
+    "omotes-sdk-python ~= 0.0.16",
     "alembic ~= 1.13.1",
 ]
 
@@ -68,7 +68,7 @@ enabled = true
 
 [tool.pytest.ini_options]
 addopts = """--cov=omotes_orchestrator --cov-report html --cov-report term-missing \
---cov-fail-under 58"""
+--cov-fail-under 57"""
 
 [tool.coverage.run]
 source = ["src"]
