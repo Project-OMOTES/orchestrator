@@ -4,7 +4,7 @@ import sys
 import threading
 import pprint
 import uuid
-from datetime import timedelta
+from datetime import datetime, timezone, timedelta
 from types import FrameType
 from typing import Any, Union
 
@@ -146,6 +146,8 @@ class Orchestrator:
     workflow_manager: WorkflowTypeManager
     """Store for all available workflow types."""
     _init_barriers: LifeCycleBarrierManager
+    """Orchestrator instance start datetime (UTC)"""
+    _start_datetime_utc: datetime
 
     def __init__(
         self,
@@ -170,6 +172,7 @@ class Orchestrator:
         self.postgresql_if = postgresql_if
         self.workflow_manager = workflow_manager
         self._init_barriers = LifeCycleBarrierManager()
+        self._start_datetime_utc = datetime.now(timezone.utc)
 
     def _resume_init_barriers(self, all_jobs: list[JobDB]) -> None:
         """Resume the INIT lifecycle barriers for all jobs while starting the orchestrator.
@@ -185,6 +188,12 @@ class Orchestrator:
         """Start the orchestrator."""
         self.postgresql_if.start()
         self._resume_init_barriers(self.postgresql_if.get_all_jobs())
+
+        """Start a thread to run database stale jobs cleaner."""
+        stale_jobs_cleaner = threading.Thread(target=self.postgresql_if.start_stale_jobs_cleaner,
+                                              args=[self._start_datetime_utc],
+                                              daemon=True)
+        stale_jobs_cleaner.start()
 
         self.celery_if.start()
         self.omotes_if.start()
@@ -206,6 +215,7 @@ class Orchestrator:
         self.jobs_broker_if.stop()
         self.celery_if.stop()
         self.postgresql_if.stop()
+        # TODO: stop db stale_jobs_cleaner?
 
     def new_job_submitted_handler(self, job_submission: JobSubmission, job: Job) -> None:
         """When a new job is submitted through OMOTES SDK.

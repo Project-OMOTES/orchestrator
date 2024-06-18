@@ -28,6 +28,7 @@ class PostgreSQLConfig:
     database: str
     username: Optional[str]
     password: Optional[str]
+    job_retention_sec: int
 
     def __init__(self, prefix: str = ""):
         """Create the PostgreSQL configuration and retrieve values from env vars.
@@ -39,6 +40,8 @@ class PostgreSQLConfig:
         self.database = os.environ.get(f"{prefix}POSTGRESQL_DATABASE", "public")
         self.username = os.environ.get(f"{prefix}POSTGRESQL_USERNAME")
         self.password = os.environ.get(f"{prefix}POSTGRESQL_PASSWORD")
+        """Default database job row retention period to be 48 hours."""
+        self.job_retention_sec = int(os.environ.get(f"{prefix}JOB_RETENTION_SEC", "172800"))
 
 
 @dataclass

@@ -1,6 +1,7 @@
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
+import time
 import logging
 from typing import Generator, Optional
 
@@ -78,7 +79,7 @@ def initialize_db(application_name: str, config: PostgreSQLConfig) -> Engine:
 class PostgresInterface:
     """Interface to the SQL database for any queries to persist or retrieve job information.
 
-    Note: The interface may be called from many threads at once. Therefor each query/function
+    Note: The interface may be called from many threads at once. Therefore each query/function
     in this interface must set up a Session (scope) separately.
     """
 
@@ -210,6 +211,46 @@ class PostgresInterface:
                 result = True
 
         return result
+
+    def start_stale_jobs_cleaner(self, orchestrator_start_datetime_utc: datetime) -> None:
+        """Start a background process to clean up stale jobs longer than the retention time.
+
+        The function acts as a daemon process, which periodically checks
+        if there are any stale jobs/rows in the database longer than the configured retention time.
+        If the orchestrator is checked to be active longer than the configured retention time,
+        the job/row will be deleted outright.
+
+        :param orchestrator_start_datetime_utc: Orchestrator instance start datetime (UTC).
+        """
+        LOGGER.info("Start a database stale jobs cleaner as a daemon process")
+
+        CHECK_INTERVAL_SEC = 30
+        job_retention_sec = self.db_config.job_retention_sec
+
+        while True:
+            cur_time = datetime.now(timezone.utc)
+            orchestrator_active_sec = (cur_time - orchestrator_start_datetime_utc).total_seconds()
+
+            if orchestrator_active_sec > job_retention_sec:
+                jobs = self.get_all_jobs()
+                for job in jobs:
+                    if job.running_at:
+                        job_duration_sec = (cur_time - job.running_at).total_seconds()
+                    elif job.submitted_at:
+                        job_duration_sec = (cur_time - job.submitted_at).total_seconds()
+                    else:
+                        job_duration_sec = (cur_time - job.registered_at).total_seconds()
+
+                    if job_duration_sec > job_retention_sec:
+                        orchestrator_up_min = round(orchestrator_active_sec / 60, 1)
+                        job_duration_min = round(job_duration_sec / 60, 1)
+
+                        self.delete_job(job.job_id)
+                        LOGGER.info("Orchestrator is up %s mins and found a job lasts %s mins. "
+                                    + "Deleted the stale job %s",
+                                    orchestrator_up_min, job_duration_min, job.job_id)
+
+            time.sleep(CHECK_INTERVAL_SEC)
 
     def job_exists(self, job_id: uuid.UUID) -> bool:
         """Check if the job exists in the database.
