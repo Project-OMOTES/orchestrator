@@ -171,6 +171,7 @@ class OrchestratorTest(unittest.TestCase):
             self.postgresql_if = Mock()
 
             self.workflow_manager = Mock()
+            self.postgres_job_manager = Mock()
 
             with patch(
                 "omotes_orchestrator.main.LifeCycleBarrierManager"
@@ -181,6 +182,7 @@ class OrchestratorTest(unittest.TestCase):
                     celery_if=self.celery_if,
                     postgresql_if=self.postgresql_if,
                     workflow_manager=self.workflow_manager,
+                    postgres_job_manager=self.postgres_job_manager
                 )
 
             self.life_cycle_barrier_manager_obj_mock = (

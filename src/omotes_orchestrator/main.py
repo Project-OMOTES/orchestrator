@@ -4,11 +4,12 @@ import sys
 import threading
 import pprint
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import timedelta
 from types import FrameType
 from typing import Any, Union
 
 from omotes_orchestrator.postgres_interface import PostgresInterface
+from omotes_orchestrator.postgres_job_manager import PostgresJobManager
 from omotes_sdk.internal.orchestrator_worker_events.messages.task_pb2 import (
     TaskResult,
     TaskProgressUpdate,
@@ -145,9 +146,9 @@ class Orchestrator:
     """Interface to PostgreSQL."""
     workflow_manager: WorkflowTypeManager
     """Store for all available workflow types."""
+    postgres_job_manager: PostgresJobManager
+    """Manage postgres job row"""
     _init_barriers: LifeCycleBarrierManager
-    """Orchestrator instance start datetime (UTC)"""
-    _start_datetime_utc: datetime
 
     def __init__(
         self,
@@ -156,6 +157,7 @@ class Orchestrator:
         celery_if: CeleryInterface,
         postgresql_if: PostgresInterface,
         workflow_manager: WorkflowTypeManager,
+        postgres_job_manager: PostgresJobManager,
     ):
         """Construct the orchestrator.
 
@@ -165,14 +167,15 @@ class Orchestrator:
         :param celery_if: Interface to the Celery app.
         :param postgresql_if: Interface to PostgreSQL to persist job information.
         :param workflow_manager: Store for all available workflow types.
+        :param postgres_job_manager: Manage postgres job row
         """
         self.omotes_if = omotes_orchestrator_if
         self.jobs_broker_if = jobs_broker_if
         self.celery_if = celery_if
         self.postgresql_if = postgresql_if
         self.workflow_manager = workflow_manager
+        self.postgres_job_manager = postgres_job_manager
         self._init_barriers = LifeCycleBarrierManager()
-        self._start_datetime_utc = datetime.now(timezone.utc)
 
     def _resume_init_barriers(self, all_jobs: list[JobDB]) -> None:
         """Resume the INIT lifecycle barriers for all jobs while starting the orchestrator.
@@ -188,12 +191,7 @@ class Orchestrator:
         """Start the orchestrator."""
         self.postgresql_if.start()
         self._resume_init_barriers(self.postgresql_if.get_all_jobs())
-
-        """Start a thread to run database stale jobs cleaner."""
-        stale_jobs_cleaner = threading.Thread(target=self.postgresql_if.start_stale_jobs_cleaner,
-                                              args=[self._start_datetime_utc],
-                                              daemon=True)
-        stale_jobs_cleaner.start()
+        self.postgres_job_manager.start()
 
         self.celery_if.start()
         self.omotes_if.start()
@@ -215,7 +213,7 @@ class Orchestrator:
         self.jobs_broker_if.stop()
         self.celery_if.stop()
         self.postgresql_if.stop()
-        # TODO: stop db stale_jobs_cleaner?
+        self.postgres_job_manager.stop()
 
     def new_job_submitted_handler(self, job_submission: JobSubmission, job: Job) -> None:
         """When a new job is submitted through OMOTES SDK.
@@ -561,8 +559,16 @@ def main() -> None:
     celery_if = CeleryInterface(config.celery_config)
     jobs_broker_if = JobBrokerInterface(config.rabbitmq_worker_events)
     postgresql_if = PostgresInterface(config.postgres_config)
+    postgres_job_manager = PostgresJobManager(postgresql_if,
+                                              config.postgres_job_manager_config)
+
     orchestrator = Orchestrator(
-        orchestrator_if, jobs_broker_if, celery_if, postgresql_if, workflow_type_manager
+        orchestrator_if,
+        jobs_broker_if,
+        celery_if,
+        postgresql_if,
+        workflow_type_manager,
+        postgres_job_manager
     )
 
     stop_event = threading.Event()
