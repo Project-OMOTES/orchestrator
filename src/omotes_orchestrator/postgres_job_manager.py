@@ -97,6 +97,5 @@ class PostgresJobManager:
         else:
             job_duration_sec = (ref_time - job.registered_at).total_seconds()
 
-        job_row_is_stale = job_duration_sec > self._job_retention_sec
+        job_row_is_stale = job_duration_sec >= self._job_retention_sec
         return job_row_is_stale
-
