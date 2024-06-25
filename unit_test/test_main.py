@@ -360,15 +360,8 @@ class OrchestratorTest(unittest.TestCase):
 
 
 class PostgresJobManagerTest(unittest.TestCase):
-    def test__job_row_is_stale__returns_true(self) -> None:
+    def test__job_row_is_stale_on_registered_at__returns_true(self) -> None:
         # Arrange
-        orchestrator_config = OrchestratorConfig()
-        # Overwrite config setting
-        orchestrator_config.postgres_job_manager_config.job_retention_sec = 60
-        mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
-        postgresql_if = mocked_orchestrator.postgresql_if
-        postgres_job_manager = PostgresJobManager(postgresql_if,
-                                                  orchestrator_config.postgres_job_manager_config)
         cur_time = datetime.now()
         job = JobDB()
         job.registered_at = cur_time - timedelta(seconds=65)
@@ -376,17 +369,12 @@ class PostgresJobManagerTest(unittest.TestCase):
         # Act
 
         # Assert
-        self.assertTrue(postgres_job_manager.job_row_is_stale(job=job, ref_time=cur_time))
+        self.assertTrue(PostgresJobManager.job_row_is_stale(job=job,
+                                                            ref_time=cur_time,
+                                                            job_retention_sec=60))
 
-    def test__job_row_is_stale__returns_false(self) -> None:
+    def test__job_row_is_stale_on_registered_at__returns_false(self) -> None:
         # Arrange
-        orchestrator_config = OrchestratorConfig()
-        # Overwrite config setting
-        orchestrator_config.postgres_job_manager_config.job_retention_sec = 60
-        mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
-        postgresql_if = mocked_orchestrator.postgresql_if
-        postgres_job_manager = PostgresJobManager(postgresql_if,
-                                                  orchestrator_config.postgres_job_manager_config)
         cur_time = datetime.now()
         job = JobDB()
         job.registered_at = cur_time - timedelta(seconds=55)
@@ -394,7 +382,67 @@ class PostgresJobManagerTest(unittest.TestCase):
         # Act
 
         # Assert
-        self.assertFalse(postgres_job_manager.job_row_is_stale(job=job, ref_time=cur_time))
+        self.assertFalse(PostgresJobManager.job_row_is_stale(job=job,
+                                                             ref_time=cur_time,
+                                                             job_retention_sec=60))
+
+    def test__job_row_is_stale_on_submitted_at__returns_true(self) -> None:
+        # Arrange
+        cur_time = datetime.now()
+        job = JobDB()
+        job.registered_at = cur_time - timedelta(seconds=65)
+        job.submitted_at = cur_time - timedelta(seconds=64)
+
+        # Act
+
+        # Assert
+        self.assertTrue(PostgresJobManager.job_row_is_stale(job=job,
+                                                            ref_time=cur_time,
+                                                            job_retention_sec=60))
+
+    def test__job_row_is_stale_on_submitted_at__returns_false(self) -> None:
+        # Arrange
+        cur_time = datetime.now()
+        job = JobDB()
+        job.registered_at = cur_time - timedelta(seconds=65)
+        job.submitted_at = cur_time - timedelta(seconds=55)
+
+        # Act
+
+        # Assert
+        self.assertFalse(PostgresJobManager.job_row_is_stale(job=job,
+                                                             ref_time=cur_time,
+                                                             job_retention_sec=60))
+
+    def test__job_row_is_stale_on_running_at__returns_true(self) -> None:
+        # Arrange
+        cur_time = datetime.now()
+        job = JobDB()
+        job.registered_at = cur_time - timedelta(seconds=65)
+        job.submitted_at = cur_time - timedelta(seconds=64)
+        job.running_at = cur_time - timedelta(seconds=63)
+
+        # Act
+
+        # Assert
+        self.assertTrue(PostgresJobManager.job_row_is_stale(job=job,
+                                                            ref_time=cur_time,
+                                                            job_retention_sec=60))
+
+    def test__job_row_is_stale_on_running_at__returns_false(self) -> None:
+        # Arrange
+        cur_time = datetime.now()
+        job = JobDB()
+        job.registered_at = cur_time - timedelta(seconds=65)
+        job.submitted_at = cur_time - timedelta(seconds=64)
+        job.running_at = cur_time - timedelta(seconds=55)
+
+        # Act
+
+        # Assert
+        self.assertFalse(PostgresJobManager.job_row_is_stale(job=job,
+                                                             ref_time=cur_time,
+                                                             job_retention_sec=60))
 
 
 class MyTest(unittest.TestCase):
