@@ -212,8 +212,8 @@ class Orchestrator:
         self.omotes_if.stop()
         self.jobs_broker_if.stop()
         self.celery_if.stop()
-        self.postgresql_if.stop()
         self.postgres_job_manager.stop()
+        self.postgresql_if.stop()
 
     def new_job_submitted_handler(self, job_submission: JobSubmission, job: Job) -> None:
         """When a new job is submitted through OMOTES SDK.
