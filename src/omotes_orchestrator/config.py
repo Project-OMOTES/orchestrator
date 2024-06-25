@@ -41,6 +41,21 @@ class PostgreSQLConfig:
         self.password = os.environ.get(f"{prefix}POSTGRESQL_PASSWORD")
 
 
+class PostgresJobManagerConfig:
+    """Retrieve PostgresJobManager configuration from environment variables."""
+
+    job_retention_sec: int
+    """The allowed retention time in seconds of a database job row"""
+
+    def __init__(self, prefix: str = ""):
+        """Create the PostgresJobManager configuration and retrieve values from env vars.
+
+        :param prefix: Prefix to the name environment variables.
+        """
+        """Default database job row retention duration to be 48 hours."""
+        self.job_retention_sec = int(os.environ.get(f"{prefix}JOB_RETENTION_SEC", "172800"))
+
+
 @dataclass
 class OrchestratorConfig:
     """Configuration class for orchestrator."""
@@ -49,6 +64,8 @@ class OrchestratorConfig:
     """Configuration for Celery app."""
     postgres_config: PostgreSQLConfig
     """Configuration for PostgreSQL database for job persistence."""
+    postgres_job_manager_config: PostgresJobManagerConfig
+    """Configuration for PostgresJobManager component."""
     rabbitmq_omotes: RabbitMQConfig
     """Configuration to connect to RabbitMQ on the OMOTES SDK side."""
     rabbitmq_worker_events: RabbitMQConfig
@@ -66,6 +83,7 @@ class OrchestratorConfig:
         """Construct the orchestrator configuration using environment variables."""
         self.celery_config = CeleryConfig()
         self.postgres_config = PostgreSQLConfig()
+        self.postgres_job_manager_config = PostgresJobManagerConfig()
         self.rabbitmq_omotes = EnvRabbitMQConfig("SDK_")
         self.rabbitmq_worker_events = EnvRabbitMQConfig("TASK_")
 

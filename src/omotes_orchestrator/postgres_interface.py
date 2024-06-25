@@ -78,7 +78,7 @@ def initialize_db(application_name: str, config: PostgreSQLConfig) -> Engine:
 class PostgresInterface:
     """Interface to the SQL database for any queries to persist or retrieve job information.
 
-    Note: The interface may be called from many threads at once. Therefor each query/function
+    Note: The interface may be called from many threads at once. Therefore each query/function
     in this interface must set up a Session (scope) separately.
     """
 
