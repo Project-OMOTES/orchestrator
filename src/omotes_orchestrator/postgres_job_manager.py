@@ -84,9 +84,9 @@ class PostgresJobManager:
                         self.postgresql_if.delete_job(job.job_id)
 
                         job_manager_up_mins = round(active_sec / 60, 1)
-                        LOGGER.info("PostgresJobManager is up %s mins. "
-                                    + "Found and deleted a stale job %s",
-                                    job_manager_up_mins, job.job_id)
+                        LOGGER.warning("PostgresJobManager is up %s mins. "
+                                       + "Found and deleted a stale job %s",
+                                       job_manager_up_mins, job.job_id)
 
             if self._stop_event.is_set():
                 LOGGER.info("Stopped the stale jobs cleaner gracefully.")
