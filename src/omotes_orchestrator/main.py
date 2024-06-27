@@ -22,20 +22,14 @@ from omotes_sdk_protocol.job_pb2 import (
     JobProgressUpdate,
     JobCancel,
 )
-from omotes_sdk_protocol.work_flow_pb2 import RequestAvailableWorkflows
+from omotes_sdk.workflow_type import WorkflowTypeManager
 from omotes_sdk.job import Job
-from omotes_sdk.workflow_type import (
-    WorkflowTypeManager,
-    WorkflowType,
-    WorkflowParameter,
-    ParameterType,
-    ParameterSchema,
-    ParameterStringFormat,
-)
+
 from google.protobuf import json_format
 
 from omotes_orchestrator.celery_interface import CeleryInterface
 from omotes_orchestrator.config import OrchestratorConfig
+
 from omotes_orchestrator.db_models.job import JobStatus as JobStatusDB, JobDB
 
 logger = logging.getLogger("omotes_orchestrator")
@@ -205,17 +199,12 @@ class Orchestrator:
         )
 
         self.omotes_if.start()
-        self.omotes_if.connect_to_request_available_workflows(
-            callback_on_request_workflows=self.request_workflows_handler
-        )
         self.omotes_if.connect_to_job_submissions(
             callback_on_new_job=self.new_job_submitted_handler
         )
         self.omotes_if.connect_to_job_cancellations(
             callback_on_job_cancel=self.job_cancellation_handler
         )
-
-        self.omotes_if.send_available_workflows(self.workflow_manager)
 
     def stop(self) -> None:
         """Stop the orchestrator."""
@@ -341,14 +330,6 @@ class Orchestrator:
                     ),
                 )
                 self._cleanup_job(job_id)
-
-    def request_workflows_handler(self, request_workflows: RequestAvailableWorkflows) -> None:
-        """When a available work flows request is received from the SDK.
-
-        :param request_workflows: Request available work flows.
-        """
-        logger.info("Received an available workflows request")
-        self.omotes_if.send_available_workflows(self.workflow_manager)
 
     def _cleanup_job(self, job_id: uuid.UUID) -> None:
         """Cleanup any references to job with id `job_id`.
@@ -544,59 +525,8 @@ def main() -> None:
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug("Config:\n%s", pprint.pformat(config))
 
-    workflow_type_manager = WorkflowTypeManager(
-        possible_workflows=[
-            WorkflowType(
-                workflow_type_name="grow_optimizer_default",
-                workflow_type_description_name="Grow Optimizer default workflow",
-            ),
-            WorkflowType(
-                workflow_type_name="grow_simulator",
-                workflow_type_description_name="Grow Simulator",
-            ),
-            WorkflowType(
-                workflow_type_name="grow_optimizer_no_heat_losses",
-                workflow_type_description_name="Grow Optimizer without heat losses",
-            ),
-            WorkflowType(
-                workflow_type_name="grow_optimizer_with_pressure",
-                workflow_type_description_name="Grow Optimizer with pump pressures.",
-            ),
-            WorkflowType(
-                workflow_type_name="simulator",
-                workflow_type_description_name="High fidelity simulator",
-                workflow_parameters=[
-                    WorkflowParameter(
-                        key_name="start_time",
-                        schema=ParameterSchema(
-                            type=ParameterType.STRING,
-                            format=ParameterStringFormat.DATETIME,
-                        ),
-                    ),
-                    WorkflowParameter(
-                        key_name="step_size_in_seconds",
-                        schema=ParameterSchema(
-                            type=ParameterType.INTEGER,
-                            default="60",
-                            minimum=0,
-                        ),
-                    ),
-                    WorkflowParameter(
-                        key_name="number_of_steps",
-                        schema=ParameterSchema(
-                            type=ParameterType.INTEGER,
-                            minimum=0,
-                            maximum=1,
-                        ),
-                    ),
-                ],
-            ),
-            WorkflowType(
-                workflow_type_name="test_worker",
-                workflow_type_description_name="Used for testing purposes. Should not be used in "
-                "production environments.",
-            ),
-        ]
+    workflow_type_manager = WorkflowTypeManager.from_json_config_file(
+        "../config/workflow_config.json"
     )
     orchestrator_if = OrchestratorInterface(config.rabbitmq_omotes, workflow_type_manager)
     celery_if = CeleryInterface(config.celery_config)
