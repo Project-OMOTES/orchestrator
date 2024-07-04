@@ -30,6 +30,7 @@ from google.protobuf import json_format
 from omotes_orchestrator.celery_interface import CeleryInterface
 from omotes_orchestrator.config import OrchestratorConfig
 from omotes_orchestrator.db_models.job import JobStatus as JobStatusDB, JobDB
+from omotes_orchestrator.timeout_job_manager import TimeoutJobManager
 
 logger = logging.getLogger("omotes_orchestrator")
 
@@ -571,10 +572,13 @@ def main() -> None:
         postgres_job_manager
     )
 
+    timeout_job_manager = TimeoutJobManager(postgresql_if)
+
     stop_event = threading.Event()
 
     def _stop_by_signal(sig_num: int, sig_stackframe: Union[FrameType, None]) -> Any:
         orchestrator.stop()
+        timeout_job_manager.stop()
         stop_event.set()
 
     signal.signal(signal.SIGINT, _stop_by_signal)
@@ -586,6 +590,7 @@ def main() -> None:
         signal.signal(signal.SIGQUIT, _stop_by_signal)  # type: ignore[attr-defined]
 
     orchestrator.start()
+    timeout_job_manager.start()
     stop_event.wait()
 
 
