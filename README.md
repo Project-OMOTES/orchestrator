@@ -46,12 +46,21 @@ extension `.sh).
 - `update_dependencies`: Update `dev-requirements.txt` and `requirements.txt` based on the
   dependencies specified in `pyproject.toml`
 
-A normal development workflow would be to first use `create_venv` and then finish setting up the
-environment using `install_dependencies`. Finally, once all changes are made, you can use `lint`,
-`test_unit` and `typecheck` to check for code quality issues.
+A typical development workflow would be:
 
-In case you need to run the orchestrator locally, both `run.sh` and `run_windows.sh` are available
-to run the orchestrator bare-metal (without docker).
+1. create and configure `.env` from `.env-template`
+2. run `create_venv`
+3. run `install_dependencies`.
+4. develop or update the codebase according to the requirements...
+5. run `lint`, `test_unit`, and `typecheck` to check for code quality issues.
+
+One of the example development workflows can be that you need to run and develop the orchestrator 
+locally (without docker) while having other computation-engine infrastructure 
+(e.g. postgres, rabbitmq, workers, etc.) started by dockers. The steps could be:
+
+1. comment out the `orchestrator` parts in the `docker-compose.yml` file in the `computation-engine` repository.
+2. start computation-engine infrastructure via running `setup` and `start` scripts in the `computation-engine` repository.
+3. run `run.sh` or `run_windows.sh` in the `orchestrator` repository to develop and interact with computation-engine infrastructure.
 
 All these scripts are expected to run from the root of the repository
 
