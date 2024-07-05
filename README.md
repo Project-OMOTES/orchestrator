@@ -12,6 +12,8 @@ The following directory structure is used:
     for both Linux and Windows.
 - `computation-engine-at-orchestrator/`: Submodule link to the latest `computation-engine` release.
     Necessary for infrastructure that is necessary during the integration test.
+- `config/`: Contains orchestrator workflow definitions configuration. The `workflow_config.json`
+    file will be overwritten by a volume mount when deploying via docker.
 - `integration_test/`: Contains a large integration test which is run to check for robustness and
     stability.
 - `src/`: Source code for the orchestrator as well as the necessary database models.
