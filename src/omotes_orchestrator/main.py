@@ -23,12 +23,14 @@ from omotes_sdk_protocol.job_pb2 import (
     JobProgressUpdate,
     JobCancel,
 )
+from omotes_sdk.workflow_type import WorkflowTypeManager
 from omotes_sdk.job import Job
-from omotes_sdk.workflow_type import WorkflowTypeManager, WorkflowType
+
 from google.protobuf import json_format
 
 from omotes_orchestrator.celery_interface import CeleryInterface
 from omotes_orchestrator.config import OrchestratorConfig
+
 from omotes_orchestrator.db_models.job import JobStatus as JobStatusDB, JobDB
 
 logger = logging.getLogger("omotes_orchestrator")
@@ -194,17 +196,21 @@ class Orchestrator:
         self.postgres_job_manager.start()
 
         self.celery_if.start()
-        self.omotes_if.start()
-        self.omotes_if.connect_to_job_submissions(
-            callback_on_new_job=self.new_job_submitted_handler
-        )
-        self.omotes_if.connect_to_job_cancellations(self.job_cancellation_handler)
+
         self.jobs_broker_if.start()
         self.jobs_broker_if.add_queue_subscription(
             "omotes_task_result_events", self.task_result_received
         )
         self.jobs_broker_if.add_queue_subscription(
             "omotes_task_progress_events", self.task_progress_update
+        )
+
+        self.omotes_if.start()
+        self.omotes_if.connect_to_job_submissions(
+            callback_on_new_job=self.new_job_submitted_handler
+        )
+        self.omotes_if.connect_to_job_cancellations(
+            callback_on_job_cancel=self.job_cancellation_handler
         )
 
     def stop(self) -> None:
@@ -527,33 +533,8 @@ def main() -> None:
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug("Config:\n%s", pprint.pformat(config))
 
-    workflow_type_manager = WorkflowTypeManager(
-        possible_workflows=[
-            WorkflowType(
-                workflow_type_name="grow_optimizer_default",
-                workflow_type_description_name="Grow Optimizer default workflow",
-            ),
-            WorkflowType(
-                workflow_type_name="grow_simulator", workflow_type_description_name="Grow Simulator"
-            ),
-            WorkflowType(
-                workflow_type_name="grow_optimizer_no_heat_losses",
-                workflow_type_description_name="Grow Optimizer without heat losses",
-            ),
-            WorkflowType(
-                workflow_type_name="grow_optimizer_with_pressure",
-                workflow_type_description_name="Grow Optimizer with pump pressures.",
-            ),
-            WorkflowType(
-                workflow_type_name="simulator",
-                workflow_type_description_name="High fidelity simulator",
-            ),
-            WorkflowType(
-                workflow_type_name="test_worker",
-                workflow_type_description_name="Used for testing purposes. Should not be used in "
-                "production environments.",
-            ),
-        ]
+    workflow_type_manager = WorkflowTypeManager.from_json_config_file(
+        "../config/workflow_config.json"
     )
     orchestrator_if = OrchestratorInterface(config.rabbitmq_omotes, workflow_type_manager)
     celery_if = CeleryInterface(config.celery_config)
