@@ -29,7 +29,8 @@
       },
       {
         "parameter_type": "datetime",
-        "key_name": "end_time"
+        "key_name": "end_time",
+        "default": "2023-12-31T20:00:"
       },
       {
         "parameter_type": "integer",

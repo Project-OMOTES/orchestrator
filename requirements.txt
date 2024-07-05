@@ -4,9 +4,9 @@
 #
 #    pip-compile --output-file=requirements.txt pyproject.toml
 #
-aio-pika==9.3.1
+aio-pika==9.4.2
     # via omotes-sdk-python
-aiormq==6.7.7
+aiormq==6.8.0
     # via aio-pika
 alembic==1.13.1
     # via orchestrator (pyproject.toml)
@@ -44,11 +44,11 @@ markupsafe==2.1.5
     # via mako
 multidict==6.0.5
     # via yarl
-omotes-sdk-protocol==0.0.8
+omotes-sdk-protocol==0.1.1
     # via omotes-sdk-python
-omotes-sdk-python==0.0.16
+omotes-sdk-python==1.0.0
     # via orchestrator (pyproject.toml)
-pamqp==3.2.1
+pamqp==3.3.0
     # via aiormq
 prompt-toolkit==3.0.41
     # via click-repl
@@ -66,9 +66,10 @@ sqlalchemy==2.0.28
     # via
     #   alembic
     #   orchestrator (pyproject.toml)
-typing-extensions==4.8.0
+typing-extensions==4.11.0
     # via
     #   alembic
+    #   omotes-sdk-python
     #   sqlalchemy
 tzdata==2023.3
     # via celery
