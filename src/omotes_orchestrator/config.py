@@ -56,6 +56,25 @@ class PostgresJobManagerConfig:
         self.job_retention_sec = int(os.environ.get(f"{prefix}JOB_RETENTION_SEC", "172800"))
 
 
+class TimeoutJobManagerConfig:
+    """Retrieve TimeoutJobManager configuration from environment variables."""
+
+    start_buffer_sec: int
+    """Buffer period in seconds since the TimeoutJobManager is instantiated to safely
+    start its activities."""
+    rerun_sec: int
+    """Period in seconds to rerun the timeout job cancellation task."""
+
+    def __init__(self, prefix: str = ""):
+        """Create the TimeoutJobManagerConfig configuration and retrieve values from env vars.
+
+        :param prefix: Prefix to the name environment variables.
+        """
+        self.start_buffer_sec = int(
+            os.environ.get(f"{prefix}TIMEOUT_JOB_MANAGER_START_BUFFER_SEC", "60"))
+        self.rerun_sec = int(os.environ.get(f"{prefix}TIMEOUT_JOB_HANDLER_RERUN_SEC", "30"))
+
+
 @dataclass
 class OrchestratorConfig:
     """Configuration class for orchestrator."""
@@ -66,6 +85,8 @@ class OrchestratorConfig:
     """Configuration for PostgreSQL database for job persistence."""
     postgres_job_manager_config: PostgresJobManagerConfig
     """Configuration for PostgresJobManager component."""
+    timeout_job_manager_config: TimeoutJobManagerConfig
+    """Configuration for TimeoutJobManager component."""
     rabbitmq_omotes: RabbitMQConfig
     """Configuration to connect to RabbitMQ on the OMOTES SDK side."""
     rabbitmq_worker_events: RabbitMQConfig
@@ -84,6 +105,7 @@ class OrchestratorConfig:
         self.celery_config = CeleryConfig()
         self.postgres_config = PostgreSQLConfig()
         self.postgres_job_manager_config = PostgresJobManagerConfig()
+        self.timeout_job_manager_config = TimeoutJobManagerConfig()
         self.rabbitmq_omotes = EnvRabbitMQConfig("SDK_")
         self.rabbitmq_worker_events = EnvRabbitMQConfig("TASK_")
 

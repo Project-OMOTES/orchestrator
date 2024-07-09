@@ -1,53 +1,62 @@
+# To avoid cyclic import error
+from __future__ import annotations
+from typing import TYPE_CHECKING, Optional
+if TYPE_CHECKING:
+    from omotes_orchestrator.main import Orchestrator
+
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import threading
 from omotes_orchestrator.postgres_interface import PostgresInterface
-# from omotes_orchestrator.main import Orchestrator
 from omotes_orchestrator.db_models.job import JobDB, JobStatus
 from omotes_sdk_protocol.job_pb2 import JobCancel
+from omotes_orchestrator.config import TimeoutJobManagerConfig
 
 LOGGER = logging.getLogger("omotes_orchestrator")
 
 
 class TimeoutJobManager:
-    """Periodically checks if any job is timed out. Cancel and delete the timed-out job."""
+    """Periodically checks and cancels if any job is timed out."""
 
     postgresql_if: PostgresInterface
     """Interface to PostgreSQL."""
-    # orchestrator: Orchestrator  # TODO
-    """Orchestrator application instance"""
+    orchestrator: Optional[Orchestrator]
+    """Orchestrator application. Only when the orchestrator is linked with
+    the TimeoutJobManager instance, can the timeout_jobs_handler() method function properly."""
+    config: TimeoutJobManagerConfig
+    """TimeoutJobManager configuration."""
     _init_time: datetime
-    """Instantiated datetime (UTC), is typically instantiated when the orchestrator is started"""
-    _active_threshold_sec: int
-    """Only when the instance is initialized longer than the threshold period
-    can it start canceling the timed-out jobs."""
+    """Instantiated datetime, is typically instantiated when the orchestrator is started."""
+    _start_buffer_sec: int
+    """Only when the instance is initialized longer than the buffer period
+    can it start canceling the timed out jobs."""
     _rerun_sec: int
-    """Period in seconds to rerun the timeout job cancellation task"""
+    """Period in seconds to rerun the timeout job cancellation task."""
     _stop_event: threading.Event
-    """Event to signal the thread to stop"""
+    """Event to signal the thread to stop."""
     _timeout_jobs_handler_thread: threading.Thread
-    """Thread for canceling the timed-out job"""
+    """Thread for canceling the timed out job."""
     _timeout_jobs_handler_thread_active: bool
-    """Flag indicating if the timeout job handler thread is active"""
+    """Flag indicating if the timeout job handler thread is active."""
 
-    def __init__(self, postgresql_if: PostgresInterface) -> None:
+    def __init__(self,
+                 postgresql_if: PostgresInterface,
+                 orchestrator: Optional[Orchestrator],
+                 config: TimeoutJobManagerConfig) -> None:
         """Construct the timeout job manager."""
         self.postgresql_if = postgresql_if
-        # self.orchestrator = orchestrator
-        self._init_time = datetime.now(timezone.utc)
-        # TODO: get this from config
-        self._active_threshold_sec = 20
-        # TODO: overwrite the value when finish
-        self._rerun_sec = 10
+        self.orchestrator = orchestrator
+
+        self._init_time = datetime.now()
+        self._start_buffer_sec = config.start_buffer_sec
+        self._rerun_sec = config.rerun_sec
 
         self._stop_event = threading.Event()
         self._timeout_jobs_handler_thread = threading.Thread(target=self.timeout_jobs_handler)
         self._timeout_jobs_handler_thread_active = False
 
     def start(self) -> None:
-        """
-        TODO
-        """
+        """Start the timeout job manager as a daemon process."""
         if not self._timeout_jobs_handler_thread_active:
             LOGGER.info("Starting the timeout job manager")
 
@@ -56,9 +65,7 @@ class TimeoutJobManager:
             self._timeout_jobs_handler_thread_active = True
 
     def stop(self) -> None:
-        """
-        TODO
-        """
+        """Stop the timeout job manager."""
         if self._timeout_jobs_handler_thread_active:
             LOGGER.info("Stopping the timeout job manager")
 
@@ -66,25 +73,34 @@ class TimeoutJobManager:
             self._timeout_jobs_handler_thread.join(timeout=5.0)
             self._timeout_jobs_handler_thread_active = False
 
+    def _system_activation_sec(self) -> float:
+        """Return period in seconds since the TimeoutJobManager instantiated."""
+        return (datetime.now() - self._init_time).total_seconds()
+
     def timeout_jobs_handler(self) -> None:
-        """
-        TODO
+        """Start a background process to cancel timed out jobs.
+
+        The function periodically checks if there are any timed out jobs.
+        Meanwhile, if the TimeoutJobManager is instantiated longer than the
+        configured buffer time, and the relationship between TimeoutJobManager
+        and Orchestrator is correctly linked (self.orchestrator is not None, so
+        self.orchestrator.job_cancellation_handler() can be called),
+        the job/row can be canceled outright.
         """
         while not self._stop_event.is_set():
-            cur_time = datetime.now(timezone.utc)
-            active_sec = (cur_time - self._init_time).total_seconds()
+            if self.orchestrator is None:
+                LOGGER.error("Exiting timeout_jobs_handler(): orchestrator is None.")
+                break
 
-            if active_sec > self._active_threshold_sec:
+            if self._system_activation_sec() > self._start_buffer_sec:
                 jobs = self.postgresql_if.get_all_jobs()
                 for job in jobs:
                     if self.job_is_timedout(job):
-                        # job_cancellation = JobCancel(uuid=str(job.job_id))
-                        
-                        # self.orchestrator.job_cancellation_handler(job_cancellation)
+                        self.orchestrator.job_cancellation_handler(JobCancel(uuid=str(job.job_id)))
 
-                        timeout_job_manager_up_mins = round(active_sec / 60, 1)
+                        timeout_job_manager_up_mins = round(self._system_activation_sec() / 60, 1)
                         LOGGER.warning("TimeoutJobManager is up %s mins. "
-                                       + "Found and deleted a timed-out job %s",
+                                       + "Found and canceled a timed out job %s",
                                        timeout_job_manager_up_mins, job.job_id)
 
             if self._stop_event.is_set():
@@ -95,15 +111,16 @@ class TimeoutJobManager:
 
     @staticmethod
     def job_is_timedout(job: JobDB) -> bool:
-        """
-        TODO
+        """Check if the job is timed out.
 
-        TODO: if job.timeout_after_ms is not specified, job can be cancelled immediately -> add a test case on this
+        :param job: Database job row
+        :return: True if the job status is RUNNING and the current time exceeds
+        the job running time + configured job timeout delta
         """
         if job.status == JobStatus.RUNNING and job.running_at:
-            # To ensure current time is on the same timezone as job.running_at to ensure a valid comparison
+            # To ensure current time is with the same timezone as job.running_at
             job_tz = job.running_at.tzinfo
             cur_time_tz = datetime.now().replace(tzinfo=job_tz)
-            return cur_time_tz >= job.running_at + timedelta(milliseconds=job.timeout_after_ms)
+            return cur_time_tz > job.running_at + timedelta(milliseconds=job.timeout_after_ms)
         else:
             return False
