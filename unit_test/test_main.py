@@ -20,7 +20,7 @@ from omotes_orchestrator.main import (
     BarrierTimeoutException,
     MissingBarrierException,
     Orchestrator,
-    PostgresJobManager
+    PostgresJobManager,
 )
 
 
@@ -183,7 +183,7 @@ class OrchestratorTest(unittest.TestCase):
                     celery_if=self.celery_if,
                     postgresql_if=self.postgresql_if,
                     workflow_manager=self.workflow_manager,
-                    postgres_job_manager=self.postgres_job_manager
+                    postgres_job_manager=self.postgres_job_manager,
                 )
 
             self.life_cycle_barrier_manager_obj_mock = (
@@ -369,9 +369,9 @@ class PostgresJobManagerTest(unittest.TestCase):
         # Act
 
         # Assert
-        self.assertTrue(PostgresJobManager.job_row_is_stale(job=job,
-                                                            ref_time=cur_time,
-                                                            job_retention_sec=60))
+        self.assertTrue(
+            PostgresJobManager.job_row_is_stale(job=job, ref_time=cur_time, job_retention_sec=60)
+        )
 
     def test__job_row_is_stale_on_registered_at__returns_false(self) -> None:
         # Arrange
@@ -382,9 +382,9 @@ class PostgresJobManagerTest(unittest.TestCase):
         # Act
 
         # Assert
-        self.assertFalse(PostgresJobManager.job_row_is_stale(job=job,
-                                                             ref_time=cur_time,
-                                                             job_retention_sec=60))
+        self.assertFalse(
+            PostgresJobManager.job_row_is_stale(job=job, ref_time=cur_time, job_retention_sec=60)
+        )
 
     def test__job_row_is_stale_on_submitted_at__returns_true(self) -> None:
         # Arrange
@@ -396,9 +396,9 @@ class PostgresJobManagerTest(unittest.TestCase):
         # Act
 
         # Assert
-        self.assertTrue(PostgresJobManager.job_row_is_stale(job=job,
-                                                            ref_time=cur_time,
-                                                            job_retention_sec=60))
+        self.assertTrue(
+            PostgresJobManager.job_row_is_stale(job=job, ref_time=cur_time, job_retention_sec=60)
+        )
 
     def test__job_row_is_stale_on_submitted_at__returns_false(self) -> None:
         # Arrange
@@ -410,9 +410,9 @@ class PostgresJobManagerTest(unittest.TestCase):
         # Act
 
         # Assert
-        self.assertFalse(PostgresJobManager.job_row_is_stale(job=job,
-                                                             ref_time=cur_time,
-                                                             job_retention_sec=60))
+        self.assertFalse(
+            PostgresJobManager.job_row_is_stale(job=job, ref_time=cur_time, job_retention_sec=60)
+        )
 
     def test__job_row_is_stale_on_running_at__returns_true(self) -> None:
         # Arrange
@@ -425,9 +425,9 @@ class PostgresJobManagerTest(unittest.TestCase):
         # Act
 
         # Assert
-        self.assertTrue(PostgresJobManager.job_row_is_stale(job=job,
-                                                            ref_time=cur_time,
-                                                            job_retention_sec=60))
+        self.assertTrue(
+            PostgresJobManager.job_row_is_stale(job=job, ref_time=cur_time, job_retention_sec=60)
+        )
 
     def test__job_row_is_stale_on_running_at__returns_false(self) -> None:
         # Arrange
@@ -440,9 +440,9 @@ class PostgresJobManagerTest(unittest.TestCase):
         # Act
 
         # Assert
-        self.assertFalse(PostgresJobManager.job_row_is_stale(job=job,
-                                                             ref_time=cur_time,
-                                                             job_retention_sec=60))
+        self.assertFalse(
+            PostgresJobManager.job_row_is_stale(job=job, ref_time=cur_time, job_retention_sec=60)
+        )
 
 
 class MyTest(unittest.TestCase):
