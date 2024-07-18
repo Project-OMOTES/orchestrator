@@ -165,7 +165,7 @@ class LifeCycleBarrierManagerTest(unittest.TestCase):
 class OrchestratorTest(unittest.TestCase):
     class MockedOrchestrator:
         def __init__(self) -> None:
-            self.omotes_orchestrator_if = Mock()
+            self.omotes_orchestrator_sdk_if = Mock()
             self.jobs_broker_if = Mock()
             self.celery_if = Mock()
             self.celery_if.start_workflow.return_value = "celery_id"
@@ -178,7 +178,7 @@ class OrchestratorTest(unittest.TestCase):
                 "omotes_orchestrator.main.LifeCycleBarrierManager"
             ) as life_cycle_barrier_manager_class_mock:
                 self.orchestrator = Orchestrator(
-                    omotes_orchestrator_if=self.omotes_orchestrator_if,
+                    omotes_orchestrator_sdk_if=self.omotes_orchestrator_sdk_if,
                     jobs_broker_if=self.jobs_broker_if,
                     celery_if=self.celery_if,
                     postgresql_if=self.postgresql_if,
