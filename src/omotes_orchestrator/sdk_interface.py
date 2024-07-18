@@ -113,10 +113,6 @@ class SDKInterface:
     def start(self) -> None:
         """Start the orchestrator interface."""
         self.broker_if.start()
-        self.connect_to_request_available_workflows(
-            callback_on_request_workflows=self.request_workflows_handler
-        )
-        self.send_available_workflows()
 
     def stop(self) -> None:
         """Stop the orchestrator interface."""
@@ -191,14 +187,6 @@ class SDKInterface:
         self.broker_if.send_message_to(
             OmotesQueueNames.job_results_queue_name(job), result.SerializeToString()
         )
-
-    def request_workflows_handler(self, request_workflows: RequestAvailableWorkflows) -> None:
-        """When an available work flows request is received from the SDK.
-
-        :param request_workflows: Request available work flows.
-        """
-        logger.info("Received an available workflows request")
-        self.send_available_workflows()
 
     def send_available_workflows(self) -> None:
         """Send the available workflows to the SDK."""

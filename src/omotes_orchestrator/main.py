@@ -22,6 +22,7 @@ from omotes_sdk_protocol.job_pb2 import (
     JobProgressUpdate,
     JobCancel,
 )
+from omotes_sdk_protocol.workflow_pb2 import RequestAvailableWorkflows
 from omotes_sdk.workflow_type import WorkflowTypeManager
 from omotes_sdk.job import Job
 
@@ -212,6 +213,11 @@ class Orchestrator:
             callback_on_job_cancel=self.job_cancellation_handler
         )
 
+        self.omotes_sdk_if.connect_to_request_available_workflows(
+            callback_on_request_workflows=self.request_workflows_handler
+        )
+        self.omotes_sdk_if.send_available_workflows()
+
     def stop(self) -> None:
         """Stop the orchestrator."""
         self.omotes_sdk_if.stop()
@@ -219,6 +225,14 @@ class Orchestrator:
         self.celery_if.stop()
         self.postgres_job_manager.stop()
         self.postgresql_if.stop()
+
+    def request_workflows_handler(self, request_workflows: RequestAvailableWorkflows) -> None:
+        """When an available work flows request is received from the SDK.
+
+        :param request_workflows: Request available work flows.
+        """
+        logger.info("Received an available workflows request")
+        self.omotes_sdk_if.send_available_workflows()
 
     def new_job_submitted_handler(self, job_submission: JobSubmission, job: Job) -> None:
         """When a new job is submitted through OMOTES SDK.
