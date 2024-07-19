@@ -103,6 +103,8 @@ class TimeoutJobManager:
                                        + "Found and canceled a timed out job %s",
                                        timeout_job_manager_up_mins, job.job_id)
 
+                LOGGER.info("Processed %s jobs to check for timed out jobs", len(jobs))
+
             if self._stop_event.is_set():
                 LOGGER.info("Stopped the timeout job manager gracefully.")
                 break
@@ -118,9 +120,8 @@ class TimeoutJobManager:
         the job running time + configured job timeout delta
         """
         if job.status == JobStatus.RUNNING and job.running_at:
-            # To ensure current time is with the same timezone as job.running_at
             job_tz = job.running_at.tzinfo
-            cur_time_tz = datetime.now().replace(tzinfo=job_tz)
+            cur_time_tz = datetime.now(job_tz)
             return cur_time_tz > job.running_at + timedelta(milliseconds=job.timeout_after_ms)
         else:
             return False
