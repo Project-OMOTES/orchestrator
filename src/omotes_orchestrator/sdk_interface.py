@@ -11,7 +11,7 @@ from omotes_sdk_protocol.job_pb2 import (
     JobCancel,
 )
 from omotes_sdk_protocol.workflow_pb2 import RequestAvailableWorkflows
-from omotes_sdk.internal.common.broker_interface import BrokerInterface
+from omotes_sdk.internal.common.broker_interface import BrokerInterface, AMQPQueueType
 from omotes_sdk.config import RabbitMQConfig
 from omotes_sdk.job import Job
 from omotes_sdk.queue_names import OmotesQueueNames
@@ -113,6 +113,7 @@ class SDKInterface:
     def start(self) -> None:
         """Start the orchestrator interface."""
         self.broker_if.start()
+        self.broker_if.declare_exchange(OmotesQueueNames.omotes_exchange_name())
 
     def stop(self) -> None:
         """Stop the orchestrator interface."""
@@ -130,6 +131,8 @@ class SDKInterface:
             self.broker_if.add_queue_subscription(
                 OmotesQueueNames.job_submission_queue_name(workflow_type),
                 callback_on_message=callback_handler.callback_on_new_job_wrapped,
+                queue_type=AMQPQueueType.DURABLE,
+                exchange_name=OmotesQueueNames.omotes_exchange_name(),
             )
 
     def connect_to_job_cancellations(
@@ -143,6 +146,8 @@ class SDKInterface:
         self.broker_if.add_queue_subscription(
             OmotesQueueNames.job_cancel_queue_name(),
             callback_on_message=callback_handler.callback_on_job_cancelled_wrapped,
+            queue_type=AMQPQueueType.DURABLE,
+            exchange_name=OmotesQueueNames.omotes_exchange_name(),
         )
 
     def connect_to_request_available_workflows(
@@ -156,6 +161,8 @@ class SDKInterface:
         self.broker_if.add_queue_subscription(
             OmotesQueueNames.request_available_workflows_queue_name(),
             callback_on_message=callback_handler.callback_on_request_workflows_wrapped,
+            queue_type=AMQPQueueType.EXCLUSIVE,
+            exchange_name=OmotesQueueNames.omotes_exchange_name(),
         )
 
     def send_job_progress_update(self, job: Job, progress_update: JobProgressUpdate) -> None:
@@ -165,7 +172,9 @@ class SDKInterface:
         :param progress_update: Current progress for the job.
         """
         self.broker_if.send_message_to(
-            OmotesQueueNames.job_progress_queue_name(job), progress_update.SerializeToString()
+            exchange_name=OmotesQueueNames.omotes_exchange_name(),
+            routing_key=OmotesQueueNames.job_progress_queue_name(job),
+            message=progress_update.SerializeToString(),
         )
 
     def send_job_status_update(self, job: Job, status_update: JobStatusUpdate) -> None:
@@ -175,7 +184,9 @@ class SDKInterface:
         :param status_update: Current status for the job.
         """
         self.broker_if.send_message_to(
-            OmotesQueueNames.job_status_queue_name(job), status_update.SerializeToString()
+            exchange_name=OmotesQueueNames.omotes_exchange_name(),
+            routing_key=OmotesQueueNames.job_status_queue_name(job),
+            message=status_update.SerializeToString(),
         )
 
     def send_job_result(self, job: Job, result: JobResult) -> None:
@@ -185,13 +196,16 @@ class SDKInterface:
         :param result: The job result.
         """
         self.broker_if.send_message_to(
-            OmotesQueueNames.job_results_queue_name(job), result.SerializeToString()
+            exchange_name=OmotesQueueNames.omotes_exchange_name(),
+            routing_key=OmotesQueueNames.job_results_queue_name(job),
+            message=result.SerializeToString(),
         )
 
     def send_available_workflows(self) -> None:
         """Send the available workflows to the SDK."""
         work_type_manager_pb = self.workflow_type_manager.to_pb_message()
         self.broker_if.send_message_to(
-            OmotesQueueNames.available_workflows_queue_name(),
-            work_type_manager_pb.SerializeToString(),
+            exchange_name=OmotesQueueNames.omotes_exchange_name(),
+            routing_key=OmotesQueueNames.available_workflows_routing_key(),
+            message=work_type_manager_pb.SerializeToString(),
         )
