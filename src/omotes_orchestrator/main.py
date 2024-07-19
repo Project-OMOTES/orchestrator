@@ -14,7 +14,6 @@ from omotes_sdk.internal.orchestrator_worker_events.messages.task_pb2 import (
     TaskResult,
     TaskProgressUpdate,
 )
-from omotes_sdk.internal.orchestrator.orchestrator_interface import OrchestratorInterface
 from omotes_sdk.internal.common.broker_interface import BrokerInterface as JobBrokerInterface
 from omotes_sdk_protocol.job_pb2 import (
     JobSubmission,
@@ -23,6 +22,7 @@ from omotes_sdk_protocol.job_pb2 import (
     JobProgressUpdate,
     JobCancel,
 )
+from omotes_sdk_protocol.workflow_pb2 import RequestAvailableWorkflows
 from omotes_sdk.workflow_type import WorkflowTypeManager
 from omotes_sdk.job import Job
 
@@ -30,8 +30,8 @@ from google.protobuf import json_format
 
 from omotes_orchestrator.celery_interface import CeleryInterface
 from omotes_orchestrator.config import OrchestratorConfig
-
 from omotes_orchestrator.db_models.job import JobStatus as JobStatusDB, JobDB
+from omotes_orchestrator.sdk_interface import SDKInterface
 from omotes_orchestrator.timeout_job_manager import TimeoutJobManager
 
 logger = logging.getLogger("omotes_orchestrator")
@@ -138,8 +138,8 @@ class LifeCycleBarrierManager:
 class Orchestrator:
     """Orchestrator application."""
 
-    omotes_if: OrchestratorInterface
-    """Interface to OMOTES SDK."""
+    omotes_sdk_if: SDKInterface
+    """Interface to OMOTES SDK from orchestrator-side."""
     jobs_broker_if: JobBrokerInterface
     """Interface to RabbitMQ, Celery side for events and results send by workers outside of
     Celery."""
@@ -157,7 +157,7 @@ class Orchestrator:
 
     def __init__(
         self,
-        omotes_orchestrator_if: OrchestratorInterface,
+        omotes_orchestrator_sdk_if: SDKInterface,
         jobs_broker_if: JobBrokerInterface,
         celery_if: CeleryInterface,
         postgresql_if: PostgresInterface,
@@ -167,7 +167,7 @@ class Orchestrator:
     ):
         """Construct the orchestrator.
 
-        :param omotes_orchestrator_if: Interface to OMOTES SDK.
+        :param omotes_orchestrator_sdk_if: Interface to OMOTES SDK.
         :param jobs_broker_if: Interface to RabbitMQ, Celery side for events and results send by
             workers outside of Celery.
         :param celery_if: Interface to the Celery app.
@@ -176,7 +176,7 @@ class Orchestrator:
         :param postgres_job_manager: Manage and clean up postgres stale job rows.
         :param timeout_job_manager: Cancel and delete the job when it is timed out.
         """
-        self.omotes_if = omotes_orchestrator_if
+        self.omotes_sdk_if = omotes_orchestrator_sdk_if
         self.jobs_broker_if = jobs_broker_if
         self.celery_if = celery_if
         self.postgresql_if = postgresql_if
@@ -214,25 +214,38 @@ class Orchestrator:
             "omotes_task_progress_events", self.task_progress_update
         )
 
-        self.omotes_if.start()
-        self.omotes_if.connect_to_job_submissions(
+        self.omotes_sdk_if.start()
+        self.omotes_sdk_if.connect_to_job_submissions(
             callback_on_new_job=self.new_job_submitted_handler
         )
-        self.omotes_if.connect_to_job_cancellations(
+        self.omotes_sdk_if.connect_to_job_cancellations(
             callback_on_job_cancel=self.job_cancellation_handler
         )
+
+        self.omotes_sdk_if.connect_to_request_available_workflows(
+            callback_on_request_workflows=self.request_workflows_handler
+        )
+        self.omotes_sdk_if.send_available_workflows()
 
         self.postgres_job_manager.start()
         self.timeout_job_manager.start()
 
     def stop(self) -> None:
         """Stop the orchestrator."""
-        self.omotes_if.stop()
+        self.omotes_sdk_if.stop()
         self.jobs_broker_if.stop()
         self.celery_if.stop()
         self.postgres_job_manager.stop()
         self.timeout_job_manager.stop()
         self.postgresql_if.stop()
+
+    def request_workflows_handler(self, request_workflows: RequestAvailableWorkflows) -> None:
+        """When an available work flows request is received from the SDK.
+
+        :param request_workflows: Request available work flows.
+        """
+        logger.info("Received an available workflows request")
+        self.omotes_sdk_if.send_available_workflows()
 
     def new_job_submitted_handler(self, job_submission: JobSubmission, job: Job) -> None:
         """When a new job is submitted through OMOTES SDK.
@@ -335,13 +348,13 @@ class Orchestrator:
                 job = Job(id=job_db.job_id, workflow_type=workflow_type)
 
                 self.celery_if.cancel_workflow(job_db.celery_id)
-                self.omotes_if.send_job_status_update(
+                self.omotes_sdk_if.send_job_status_update(
                     job=job,
                     status_update=JobStatusUpdate(
                         uuid=str(job.id), status=JobStatusUpdate.JobStatus.CANCELLED
                     ),
                 )
-                self.omotes_if.send_job_result(
+                self.omotes_sdk_if.send_job_result(
                     job=job,
                     result=JobResult(
                         uuid=str(job.id),
@@ -416,7 +429,7 @@ class Orchestrator:
                     task_result.job_id,
                     task_result.celery_task_id,
                 )
-                self.omotes_if.send_job_result(
+                self.omotes_sdk_if.send_job_result(
                     job=job,
                     result=JobResult(
                         uuid=str(job.id),
@@ -432,7 +445,7 @@ class Orchestrator:
                     task_result.job_id,
                     task_result.celery_task_id,
                 )
-                self.omotes_if.send_job_result(
+                self.omotes_sdk_if.send_job_result(
                     job=job,
                     result=JobResult(
                         uuid=str(job.id),
@@ -513,7 +526,7 @@ class Orchestrator:
 
             if progress_update.progress == 0:  # first progress indicating calculation start
                 logger.debug("Progress update was the first. Setting job %s to RUNNING", job.id)
-                self.omotes_if.send_job_status_update(
+                self.omotes_sdk_if.send_job_status_update(
                     job=job,
                     status_update=JobStatusUpdate(
                         uuid=str(job.id),
@@ -527,7 +540,7 @@ class Orchestrator:
                 progress_update.message,
                 job.id,
             )
-            self.omotes_if.send_job_progress_update(
+            self.omotes_sdk_if.send_job_progress_update(
                 job,
                 JobProgressUpdate(
                     uuid=str(job.id),
@@ -549,12 +562,11 @@ def main() -> None:
     workflow_type_manager = WorkflowTypeManager.from_json_config_file(
         "../config/workflow_config.json"
     )
-    orchestrator_if = OrchestratorInterface(config.rabbitmq_omotes, workflow_type_manager)
+    orchestrator_if = SDKInterface(config.rabbitmq_omotes, workflow_type_manager)
     celery_if = CeleryInterface(config.celery_config)
     jobs_broker_if = JobBrokerInterface(config.rabbitmq_worker_events)
     postgresql_if = PostgresInterface(config.postgres_config)
-    postgres_job_manager = PostgresJobManager(postgresql_if,
-                                              config.postgres_job_manager_config)
+    postgres_job_manager = PostgresJobManager(postgresql_if, config.postgres_job_manager_config)
     timeout_job_manager = TimeoutJobManager(postgresql_if,
                                             None,
                                             config.timeout_job_manager_config)
@@ -566,7 +578,7 @@ def main() -> None:
         postgresql_if,
         workflow_type_manager,
         postgres_job_manager,
-        timeout_job_manager
+        timeout_job_manager,
     )
 
     stop_event = threading.Event()
