@@ -32,6 +32,7 @@ from omotes_orchestrator.celery_interface import CeleryInterface
 from omotes_orchestrator.config import OrchestratorConfig
 from omotes_orchestrator.db_models.job import JobStatus as JobStatusDB, JobDB
 from omotes_orchestrator.sdk_interface import SDKInterface
+from omotes_orchestrator.timeout_job_manager import TimeoutJobManager
 
 logger = logging.getLogger("omotes_orchestrator")
 
@@ -149,7 +150,9 @@ class Orchestrator:
     workflow_manager: WorkflowTypeManager
     """Store for all available workflow types."""
     postgres_job_manager: PostgresJobManager
-    """Manage postgres job row"""
+    """Manage and clean up the postgres stale job row."""
+    timeout_job_manager: TimeoutJobManager
+    """Cancel and delete the job when it is timed out."""
     _init_barriers: LifeCycleBarrierManager
 
     def __init__(
@@ -160,6 +163,7 @@ class Orchestrator:
         postgresql_if: PostgresInterface,
         workflow_manager: WorkflowTypeManager,
         postgres_job_manager: PostgresJobManager,
+        timeout_job_manager: TimeoutJobManager
     ):
         """Construct the orchestrator.
 
@@ -169,7 +173,8 @@ class Orchestrator:
         :param celery_if: Interface to the Celery app.
         :param postgresql_if: Interface to PostgreSQL to persist job information.
         :param workflow_manager: Store for all available workflow types.
-        :param postgres_job_manager: Manage postgres job row
+        :param postgres_job_manager: Manage and clean up postgres stale job rows.
+        :param timeout_job_manager: Cancel and delete the job when it is timed out.
         """
         self.omotes_sdk_if = omotes_orchestrator_sdk_if
         self.jobs_broker_if = jobs_broker_if
@@ -177,7 +182,12 @@ class Orchestrator:
         self.postgresql_if = postgresql_if
         self.workflow_manager = workflow_manager
         self.postgres_job_manager = postgres_job_manager
+        self.timeout_job_manager = timeout_job_manager
         self._init_barriers = LifeCycleBarrierManager()
+
+        if self.timeout_job_manager.orchestrator is None:
+            self.timeout_job_manager.orchestrator = self
+            logger.info("Assigned orchestrator %s to the timeout job manager.", self)
 
     def _resume_init_barriers(self, all_jobs: list[JobDB]) -> None:
         """Resume the INIT lifecycle barriers for all jobs while starting the orchestrator.
@@ -193,7 +203,6 @@ class Orchestrator:
         """Start the orchestrator."""
         self.postgresql_if.start()
         self._resume_init_barriers(self.postgresql_if.get_all_jobs())
-        self.postgres_job_manager.start()
 
         self.celery_if.start()
 
@@ -218,12 +227,16 @@ class Orchestrator:
         )
         self.omotes_sdk_if.send_available_workflows()
 
+        self.postgres_job_manager.start()
+        self.timeout_job_manager.start()
+
     def stop(self) -> None:
         """Stop the orchestrator."""
         self.omotes_sdk_if.stop()
         self.jobs_broker_if.stop()
         self.celery_if.stop()
         self.postgres_job_manager.stop()
+        self.timeout_job_manager.stop()
         self.postgresql_if.stop()
 
     def request_workflows_handler(self, request_workflows: RequestAvailableWorkflows) -> None:
@@ -554,6 +567,9 @@ def main() -> None:
     jobs_broker_if = JobBrokerInterface(config.rabbitmq_worker_events)
     postgresql_if = PostgresInterface(config.postgres_config)
     postgres_job_manager = PostgresJobManager(postgresql_if, config.postgres_job_manager_config)
+    timeout_job_manager = TimeoutJobManager(postgresql_if,
+                                            None,
+                                            config.timeout_job_manager_config)
 
     orchestrator = Orchestrator(
         orchestrator_if,
@@ -562,6 +578,7 @@ def main() -> None:
         postgresql_if,
         workflow_type_manager,
         postgres_job_manager,
+        timeout_job_manager,
     )
 
     stop_event = threading.Event()

@@ -21,6 +21,7 @@ from omotes_orchestrator.main import (
     MissingBarrierException,
     Orchestrator,
     PostgresJobManager,
+    TimeoutJobManager,
 )
 
 
@@ -173,6 +174,7 @@ class OrchestratorTest(unittest.TestCase):
 
             self.workflow_manager = Mock()
             self.postgres_job_manager = Mock()
+            self.timeout_job_manager = Mock()
 
             with patch(
                 "omotes_orchestrator.main.LifeCycleBarrierManager"
@@ -184,6 +186,7 @@ class OrchestratorTest(unittest.TestCase):
                     postgresql_if=self.postgresql_if,
                     workflow_manager=self.workflow_manager,
                     postgres_job_manager=self.postgres_job_manager,
+                    timeout_job_manager=self.timeout_job_manager,
                 )
 
             self.life_cycle_barrier_manager_obj_mock = (
@@ -443,6 +446,62 @@ class PostgresJobManagerTest(unittest.TestCase):
         self.assertFalse(
             PostgresJobManager.job_row_is_stale(job=job, ref_time=cur_time, job_retention_sec=60)
         )
+
+
+class TimeoutJobManagerTest(unittest.TestCase):
+    def test__job_is_timed_out__returns_false_on_status_registered(self) -> None:
+        # Arrange
+        job = JobDB()
+        # Arrange the case where the job should be considered as timed out,
+        # but job_is_timedout() returns false due to job.status != RUNNING
+        job.running_at = datetime.now() - timedelta(milliseconds=100)
+        job.timeout_after_ms = 0
+        job.status = JobStatus.REGISTERED
+
+        # Act
+
+        # Assert
+        self.assertFalse(TimeoutJobManager.job_is_timedout(job))
+
+    def test__job_is_timed_out__returns_false_on_status_submitted(self) -> None:
+        # Arrange
+        job = JobDB()
+        # Arrange the case where the job should be considered as timed out,
+        # but job_is_timedout() returns false due to job.status != RUNNING
+        job.running_at = datetime.now() - timedelta(milliseconds=100)
+        job.timeout_after_ms = 0
+        job.status = JobStatus.SUBMITTED
+
+        # Act
+
+        # Assert
+        self.assertFalse(TimeoutJobManager.job_is_timedout(job))
+
+    def test__job_is_timed_out__returns_false_on_status_running(self) -> None:
+        # Arrange
+        job = JobDB()
+        # Arrange the case where the job is not timed out yet
+        job.running_at = datetime.now() - timedelta(milliseconds=100)
+        job.timeout_after_ms = 10000
+        job.status = JobStatus.RUNNING
+
+        # Act
+
+        # Assert
+        self.assertFalse(TimeoutJobManager.job_is_timedout(job))
+
+    def test__job_is_timed_out__returns_true_on_status_running(self) -> None:
+        # Arrange
+        job = JobDB()
+        # Arrange the case where the job should be considered as timed out
+        job.running_at = datetime.now() - timedelta(milliseconds=100)
+        job.timeout_after_ms = 0
+        job.status = JobStatus.RUNNING
+
+        # Act
+
+        # Assert
+        self.assertTrue(TimeoutJobManager.job_is_timedout(job))
 
 
 class MyTest(unittest.TestCase):

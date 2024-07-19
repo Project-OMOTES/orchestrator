@@ -1,6 +1,6 @@
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 from typing import Generator, Optional
 
@@ -119,7 +119,7 @@ class PostgresInterface:
                 job_id=job_id,
                 workflow_type=workflow_type,
                 status=JobStatus.REGISTERED,
-                registered_at=datetime.now(),
+                registered_at=datetime.now(timezone.utc),
                 timeout_after_ms=round(timeout_after.total_seconds() * 1000),
             )
             session.add(new_job)
@@ -137,7 +137,9 @@ class PostgresInterface:
                 update(JobDB)
                 .where(JobDB.job_id == job_id)
                 .values(
-                    status=JobStatus.SUBMITTED, submitted_at=datetime.now(), celery_id=celery_id
+                    status=JobStatus.SUBMITTED,
+                    submitted_at=datetime.now(timezone.utc),
+                    celery_id=celery_id
                 )
             )
             session.execute(stmnt)
@@ -152,7 +154,7 @@ class PostgresInterface:
             stmnt = (
                 update(JobDB)
                 .where(JobDB.job_id == job_id)
-                .values(status=JobStatus.RUNNING, running_at=datetime.now())
+                .values(status=JobStatus.RUNNING, running_at=datetime.now(timezone.utc))
             )
             session.execute(stmnt)
 
