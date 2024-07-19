@@ -103,7 +103,7 @@ class TimeoutJobManager:
                                        + "Found and canceled a timed out job %s",
                                        timeout_job_manager_up_mins, job.job_id)
 
-                LOGGER.info("Processed %s jobs to check for timed out jobs", len(jobs))
+                LOGGER.debug("Processed %s jobs to check for timed out jobs", len(jobs))
 
             if self._stop_event.is_set():
                 LOGGER.info("Stopped the timeout job manager gracefully.")
