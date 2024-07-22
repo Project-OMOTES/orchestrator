@@ -1,6 +1,7 @@
 # To avoid cyclic import error
 from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
+
 if TYPE_CHECKING:
     from omotes_orchestrator.main import Orchestrator
 
@@ -39,10 +40,12 @@ class TimeoutJobManager:
     _timeout_jobs_handler_thread_active: bool
     """Flag indicating if the timeout job handler thread is active."""
 
-    def __init__(self,
-                 postgresql_if: PostgresInterface,
-                 orchestrator: Optional[Orchestrator],
-                 config: TimeoutJobManagerConfig) -> None:
+    def __init__(
+        self,
+        postgresql_if: PostgresInterface,
+        orchestrator: Optional[Orchestrator],
+        config: TimeoutJobManagerConfig,
+    ) -> None:
         """Construct the timeout job manager."""
         self.postgresql_if = postgresql_if
         self.orchestrator = orchestrator
@@ -99,9 +102,12 @@ class TimeoutJobManager:
                         self.orchestrator.job_cancellation_handler(JobCancel(uuid=str(job.job_id)))
 
                         timeout_job_manager_up_mins = round(self._system_activation_sec() / 60, 1)
-                        LOGGER.warning("TimeoutJobManager is up %s mins. "
-                                       + "Found and canceled a timed out job %s",
-                                       timeout_job_manager_up_mins, job.job_id)
+                        LOGGER.warning(
+                            "TimeoutJobManager is up %s mins. "
+                            + "Found and canceled a timed out job %s",
+                            timeout_job_manager_up_mins,
+                            job.job_id,
+                        )
 
                 LOGGER.debug("Processed %s jobs to check for timed out jobs", len(jobs))
 
