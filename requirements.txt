@@ -46,7 +46,7 @@ multidict==6.0.5
     # via yarl
 omotes-sdk-protocol==0.1.1
     # via omotes-sdk-python
-omotes-sdk-python==1.0.1
+omotes-sdk-python==2.0.0
     # via orchestrator (pyproject.toml)
 pamqp==3.3.0
     # via aiormq
@@ -66,6 +66,8 @@ sqlalchemy==2.0.28
     # via
     #   alembic
     #   orchestrator (pyproject.toml)
+streamcapture==1.2.4
+    # via omotes-sdk-python
 typing-extensions==4.11.0
     # via
     #   alembic
@@ -84,3 +86,6 @@ yarl==1.9.4
     # via
     #   aio-pika
     #   aiormq
+
+# The following packages are considered to be unsafe in a requirements file:
+# setuptools
