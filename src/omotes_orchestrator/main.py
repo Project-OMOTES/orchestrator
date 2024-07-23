@@ -14,10 +14,6 @@ from omotes_sdk.internal.orchestrator_worker_events.messages.task_pb2 import (
     TaskResult,
     TaskProgressUpdate,
 )
-from omotes_sdk.internal.common.broker_interface import (
-    BrokerInterface as JobBrokerInterface,
-    AMQPQueueType,
-)
 from omotes_sdk_protocol.job_pb2 import (
     JobSubmission,
     JobResult,

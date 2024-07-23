@@ -9,8 +9,6 @@ from omotes_sdk.internal.orchestrator_worker_events.messages.task_pb2 import (
     TaskProgressUpdate,
 )
 
-from omotes_orchestrator.config import CeleryConfig
-
 
 logger = logging.getLogger("omotes_orchestrator")
 
@@ -69,7 +67,7 @@ class WorkerInterface:
     """Connect to the Celery app which orchestrates the workers."""
 
     worker_broker_if: BrokerInterface
-    """Interface to RabbitMQ, Celery side for events and results send by workers outside of 
+    """Interface to RabbitMQ, Celery side for events and results send by workers outside of
     Celery."""
 
     def __init__(self, rabbitmq_worker_events: RabbitMQConfig) -> None:
