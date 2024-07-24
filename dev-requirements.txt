@@ -111,7 +111,7 @@ omotes-sdk-protocol==0.1.1
     # via
     #   -c requirements.txt
     #   omotes-sdk-python
-omotes-sdk-python==2.0.0
+omotes-sdk-python==2.0.2
     # via
     #   -c requirements.txt
     #   orchestrator (pyproject.toml)
