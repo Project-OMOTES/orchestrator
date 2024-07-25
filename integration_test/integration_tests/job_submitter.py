@@ -40,6 +40,7 @@ TIMEOUT_IN_WHICH_ALL_JOBS_MUST_FINISH_PER_PROCESS_SECONDS = 35.0
 
 
 class JobSubmitter:
+    process_number: int
     active_jobs: dict[uuid.UUID, Job]
     _result_jobs_lock: threading.Lock
     result_jobs: dict[uuid.UUID, JobResult]
@@ -47,7 +48,8 @@ class JobSubmitter:
     done: threading.Event
     errors = list[str]
 
-    def __init__(self):
+    def __init__(self, process_number: int):
+        self.process_number = process_number
         self.active_jobs = {}
         self._result_jobs_lock = threading.Lock()
         self.result_jobs = {}
@@ -106,7 +108,9 @@ class JobSubmitter:
     def run(self):
         omotes_if = None
         try:
-            omotes_if = OmotesInterface(rabbitmq_config)
+            omotes_if = OmotesInterface(
+                rabbitmq_config, f"integration_test_job_submitter.{self.process_number}"
+            )
             omotes_if.start()
 
             for i in range(0, JOB_COUNT_PER_PROCESS):
@@ -116,7 +120,9 @@ class JobSubmitter:
                         "key1": "value1",
                         "key2": ["just", "a", "list", "with", "an", "integer", 3],
                     },
-                    workflow_type=WorkflowType("test_worker", "some descr"),
+                    workflow_type=omotes_if.get_workflow_type_manager().get_workflow_by_name(
+                        "test_worker"
+                    ),
                     job_timeout=None,
                     callback_on_finished=self.handle_on_finished,
                     callback_on_progress_update=self.handle_on_progress_update,
@@ -145,8 +151,8 @@ class JobSubmitter:
                 omotes_if.stop()
 
 
-def main_process(i) -> list[str]:
-    submitter = JobSubmitter()
+def main_process(process_number: int) -> list[str]:
+    submitter = JobSubmitter(process_number)
     submitter.run()
 
     return submitter.errors

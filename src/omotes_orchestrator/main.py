@@ -14,7 +14,6 @@ from omotes_sdk.internal.orchestrator_worker_events.messages.task_pb2 import (
     TaskResult,
     TaskProgressUpdate,
 )
-from omotes_sdk.internal.common.broker_interface import BrokerInterface as JobBrokerInterface
 from omotes_sdk_protocol.job_pb2 import (
     JobSubmission,
     JobResult,
@@ -33,6 +32,7 @@ from omotes_orchestrator.config import OrchestratorConfig
 from omotes_orchestrator.db_models.job import JobStatus as JobStatusDB, JobDB
 from omotes_orchestrator.sdk_interface import SDKInterface
 from omotes_orchestrator.timeout_job_manager import TimeoutJobManager
+from omotes_orchestrator.worker_interface import WorkerInterface
 
 logger = logging.getLogger("omotes_orchestrator")
 
@@ -140,7 +140,7 @@ class Orchestrator:
 
     omotes_sdk_if: SDKInterface
     """Interface to OMOTES SDK from orchestrator-side."""
-    jobs_broker_if: JobBrokerInterface
+    worker_if: WorkerInterface
     """Interface to RabbitMQ, Celery side for events and results send by workers outside of
     Celery."""
     celery_if: CeleryInterface
@@ -158,18 +158,18 @@ class Orchestrator:
     def __init__(
         self,
         omotes_orchestrator_sdk_if: SDKInterface,
-        jobs_broker_if: JobBrokerInterface,
+        worker_if: WorkerInterface,
         celery_if: CeleryInterface,
         postgresql_if: PostgresInterface,
         workflow_manager: WorkflowTypeManager,
         postgres_job_manager: PostgresJobManager,
-        timeout_job_manager: TimeoutJobManager
+        timeout_job_manager: TimeoutJobManager,
     ):
         """Construct the orchestrator.
 
         :param omotes_orchestrator_sdk_if: Interface to OMOTES SDK.
-        :param jobs_broker_if: Interface to RabbitMQ, Celery side for events and results send by
-            workers outside of Celery.
+        :param worker_if: Interface to RabbitMQ, Celery side for events and results send by workers
+            outside of Celery.
         :param celery_if: Interface to the Celery app.
         :param postgresql_if: Interface to PostgreSQL to persist job information.
         :param workflow_manager: Store for all available workflow types.
@@ -177,7 +177,7 @@ class Orchestrator:
         :param timeout_job_manager: Cancel and delete the job when it is timed out.
         """
         self.omotes_sdk_if = omotes_orchestrator_sdk_if
-        self.jobs_broker_if = jobs_broker_if
+        self.worker_if = worker_if
         self.celery_if = celery_if
         self.postgresql_if = postgresql_if
         self.workflow_manager = workflow_manager
@@ -206,12 +206,12 @@ class Orchestrator:
 
         self.celery_if.start()
 
-        self.jobs_broker_if.start()
-        self.jobs_broker_if.add_queue_subscription(
-            "omotes_task_result_events", self.task_result_received
+        self.worker_if.start()
+        self.worker_if.connect_to_worker_task_results(
+            callback_on_worker_task_result=self.task_result_received
         )
-        self.jobs_broker_if.add_queue_subscription(
-            "omotes_task_progress_events", self.task_progress_update
+        self.worker_if.connect_to_worker_task_progress_updates(
+            callback_on_worker_task_progress_update=self.task_progress_update
         )
 
         self.omotes_sdk_if.start()
@@ -233,7 +233,7 @@ class Orchestrator:
     def stop(self) -> None:
         """Stop the orchestrator."""
         self.omotes_sdk_if.stop()
-        self.jobs_broker_if.stop()
+        self.worker_if.stop()
         self.celery_if.stop()
         self.postgres_job_manager.stop()
         self.timeout_job_manager.stop()
@@ -373,7 +373,7 @@ class Orchestrator:
         self.postgresql_if.delete_job(job_id)
         self._init_barriers.cleanup_barrier(job_id)
 
-    def task_result_received(self, serialized_message: bytes) -> None:
+    def task_result_received(self, task_result: TaskResult) -> None:
         """When a task result is received from a worker through RabbitMQ, Celery side.
 
         Note: This function must be idempotent.
@@ -382,16 +382,8 @@ class Orchestrator:
         successfully submitted to be relevant. This means that the Celery task ID is equal
         to the one available in the SQL database.
 
-        :param serialized_message: Protobuf encoded `TaskResult` message.
+        :param task_result: Protobuf `TaskResult` message.
         """
-        task_result = TaskResult()
-        task_result.ParseFromString(serialized_message)
-        logger.debug(
-            "Received result for task %s (job %s) of type %s",
-            task_result.celery_task_id,
-            task_result.job_id,
-            task_result.result_type,
-        )
         workflow_type = self.workflow_manager.get_workflow_by_name(task_result.celery_task_type)
         if workflow_type is None:
             logger.error(
@@ -461,7 +453,7 @@ class Orchestrator:
                     task_result.result_type,
                 )
 
-    def task_progress_update(self, serialized_message: bytes) -> None:
+    def task_progress_update(self, progress_update: TaskProgressUpdate) -> None:
         """When a task event is received from a worker through RabbitMQ, Celery side.
 
         Note: This function must be idempotent.
@@ -470,19 +462,8 @@ class Orchestrator:
         successfully submitted to be relevant. This means that the Celery task ID is equal
         to the one available in the SQL database.
 
-        :param serialized_message: Protobuf encoded `TaskProgressUpdate` message.
+        :param progress_update: Protobuf `TaskProgressUpdate` message.
         """
-        progress_update = TaskProgressUpdate()
-        progress_update.ParseFromString(serialized_message)
-        logger.debug(
-            "Received progress update for job %s (celery task id %s) to progress %s with "
-            "message: %s",
-            progress_update.job_id,
-            progress_update.celery_task_id,
-            progress_update.progress,
-            progress_update.message,
-        )
-
         workflow_type = self.workflow_manager.get_workflow_by_name(progress_update.celery_task_type)
         if workflow_type is None:
             logger.error(
@@ -564,16 +545,14 @@ def main() -> None:
     )
     orchestrator_if = SDKInterface(config.rabbitmq_omotes, workflow_type_manager)
     celery_if = CeleryInterface(config.celery_config)
-    jobs_broker_if = JobBrokerInterface(config.rabbitmq_worker_events)
+    worker_if = WorkerInterface(config.rabbitmq_worker_events)
     postgresql_if = PostgresInterface(config.postgres_config)
     postgres_job_manager = PostgresJobManager(postgresql_if, config.postgres_job_manager_config)
-    timeout_job_manager = TimeoutJobManager(postgresql_if,
-                                            None,
-                                            config.timeout_job_manager_config)
+    timeout_job_manager = TimeoutJobManager(postgresql_if, None, config.timeout_job_manager_config)
 
     orchestrator = Orchestrator(
         orchestrator_if,
-        jobs_broker_if,
+        worker_if,
         celery_if,
         postgresql_if,
         workflow_type_manager,

@@ -111,7 +111,7 @@ omotes-sdk-protocol==0.1.1
     # via
     #   -c requirements.txt
     #   omotes-sdk-python
-omotes-sdk-python==1.0.1
+omotes-sdk-python==2.0.2
     # via
     #   -c requirements.txt
     #   orchestrator (pyproject.toml)
@@ -177,6 +177,10 @@ sqlalchemy[mypy]==2.0.28
     #   -c requirements.txt
     #   alembic
     #   orchestrator (pyproject.toml)
+streamcapture==1.2.4
+    # via
+    #   -c requirements.txt
+    #   omotes-sdk-python
 tomli==2.0.1
     # via black
 types-protobuf==4.24.0.20240302
