@@ -129,7 +129,7 @@ class SDKInterface:
         for workflow_type in self.workflow_type_manager.get_all_workflows():
             callback_handler = JobSubmissionCallbackHandler(workflow_type, callback_on_new_job)
             self.broker_if.add_queue_subscription(
-                OmotesQueueNames.job_submission_queue_name(workflow_type),
+                queue_name=OmotesQueueNames.job_submission_queue_name(workflow_type),
                 callback_on_message=callback_handler.callback_on_new_job_wrapped,
                 queue_type=AMQPQueueType.DURABLE,
                 exchange_name=OmotesQueueNames.omotes_exchange_name(),
@@ -144,7 +144,7 @@ class SDKInterface:
         """
         callback_handler = JobCancellationHandler(callback_on_job_cancel)
         self.broker_if.add_queue_subscription(
-            OmotesQueueNames.job_cancel_queue_name(),
+            queue_name=OmotesQueueNames.job_cancel_queue_name(),
             callback_on_message=callback_handler.callback_on_job_cancelled_wrapped,
             queue_type=AMQPQueueType.DURABLE,
             exchange_name=OmotesQueueNames.omotes_exchange_name(),
@@ -159,7 +159,7 @@ class SDKInterface:
         """
         callback_handler = RequestWorkflowsHandler(callback_on_request_workflows)
         self.broker_if.add_queue_subscription(
-            OmotesQueueNames.request_available_workflows_queue_name(),
+            queue_name=OmotesQueueNames.request_available_workflows_queue_name(),
             callback_on_message=callback_handler.callback_on_request_workflows_wrapped,
             queue_type=AMQPQueueType.EXCLUSIVE,
             exchange_name=OmotesQueueNames.omotes_exchange_name(),
