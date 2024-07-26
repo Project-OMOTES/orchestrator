@@ -4,6 +4,7 @@ import unittest
 import uuid
 from datetime import timedelta, datetime
 from multiprocessing.pool import ThreadPool, MapResult
+from typing import cast
 from unittest.mock import patch, Mock
 from uuid import UUID
 
@@ -196,7 +197,7 @@ class OrchestratorTest(unittest.TestCase):
     def test__new_job_submitted_handler__fully_new_job(self) -> None:
         # Arrange
         mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
-        orchestrator = mocked_orchestrator.orchestrator
+        orchestrator = cast(unittest.mock.Mock, mocked_orchestrator.orchestrator)
         celery_if = mocked_orchestrator.celery_if
         postgresql_if = mocked_orchestrator.postgresql_if
         life_cycle_barrier_manager_obj_mock = (
@@ -207,20 +208,21 @@ class OrchestratorTest(unittest.TestCase):
 
         job_id = uuid.uuid4()
         timeout = 3000
-        workflow_type = "some-workflow"
+        workflow_type = WorkflowType("some-workflow", "some-descr")
         esdl = "Some-esdl"
         params_dict = Struct()
         job_submission = JobSubmission(
             uuid=str(job_id),
             timeout_ms=timeout,
-            workflow_type=workflow_type,
+            workflow_type=workflow_type.workflow_type_name,
             esdl=esdl,
             params_dict=params_dict,
         )
-        job = Job(id=job_id, workflow_type=WorkflowType(workflow_type, "some-descr"))
+        job = Job(id=job_id, workflow_type=workflow_type)
+        orchestrator.workflow_manager.get_workflow_by_name.return_value = workflow_type
 
         # Act
-        orchestrator.new_job_submitted_handler(job_submission, job)
+        orchestrator.new_job_submitted_handler(job_submission)
 
         # Assert
         expected_params_dict = json_format.MessageToDict(job_submission.params_dict)
@@ -244,7 +246,7 @@ class OrchestratorTest(unittest.TestCase):
     def test__new_job_submitted_handler__already_registered_but_not_submitted_new_job(self) -> None:
         # Arrange
         mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
-        orchestrator = mocked_orchestrator.orchestrator
+        orchestrator = cast(unittest.mock.Mock, mocked_orchestrator.orchestrator)
         celery_if = mocked_orchestrator.celery_if
         postgresql_if = mocked_orchestrator.postgresql_if
         life_cycle_barrier_manager_obj_mock = (
@@ -256,20 +258,21 @@ class OrchestratorTest(unittest.TestCase):
 
         job_id = uuid.uuid4()
         timeout = 3000
-        workflow_type = "some-workflow"
+        workflow_type = WorkflowType("some-workflow", "some-descr")
         esdl = "Some-esdl"
         params_dict = Struct()
         job_submission = JobSubmission(
             uuid=str(job_id),
             timeout_ms=timeout,
-            workflow_type=workflow_type,
+            workflow_type=workflow_type.workflow_type_name,
             esdl=esdl,
             params_dict=params_dict,
         )
-        job = Job(id=job_id, workflow_type=WorkflowType(workflow_type, "some-descr"))
+        job = Job(id=job_id, workflow_type=workflow_type)
+        orchestrator.workflow_manager.get_workflow_by_name.return_value = workflow_type
 
         # Act
-        orchestrator.new_job_submitted_handler(job_submission, job)
+        orchestrator.new_job_submitted_handler(job_submission)
 
         # Assert
         expected_params_dict = json_format.MessageToDict(job_submission.params_dict)
@@ -309,10 +312,9 @@ class OrchestratorTest(unittest.TestCase):
             esdl=esdl,
             params_dict=params_dict,
         )
-        job = Job(id=job_id, workflow_type=WorkflowType(workflow_type, "some-descr"))
 
         # Act
-        orchestrator.new_job_submitted_handler(job_submission, job)
+        orchestrator.new_job_submitted_handler(job_submission)
 
         # Assert
         life_cycle_barrier_manager_obj_mock.ensure_barrier.assert_not_called()
@@ -347,10 +349,9 @@ class OrchestratorTest(unittest.TestCase):
             esdl=esdl,
             params_dict=params_dict,
         )
-        job = Job(id=job_id, workflow_type=WorkflowType(workflow_type, "some-descr"))
 
         # Act
-        orchestrator.new_job_submitted_handler(job_submission, job)
+        orchestrator.new_job_submitted_handler(job_submission)
 
         # Assert
         life_cycle_barrier_manager_obj_mock.ensure_barrier.assert_not_called()

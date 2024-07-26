@@ -15,7 +15,7 @@ from omotes_sdk.internal.common.broker_interface import BrokerInterface, AMQPQue
 from omotes_sdk.config import RabbitMQConfig
 from omotes_sdk.job import Job
 from omotes_sdk.queue_names import OmotesQueueNames
-from omotes_sdk.workflow_type import WorkflowType, WorkflowTypeManager
+from omotes_sdk.workflow_type import WorkflowTypeManager
 
 logger = logging.getLogger("omotes_sdk_internal")
 
@@ -114,7 +114,7 @@ class SDKInterface:
         :param callback_on_new_job: Callback to handle any new job submission.
         """
         callback_handler = JobSubmissionCallbackHandler(callback_on_new_job)
-        self.broker_if.add_queue_subscription(
+        self.broker_if.declare_queue_and_add_subscription(
             queue_name=OmotesQueueNames.job_submission_queue_name(),
             callback_on_message=callback_handler.callback_on_new_job_wrapped,
             queue_type=AMQPQueueType.DURABLE,
@@ -129,7 +129,7 @@ class SDKInterface:
         :param callback_on_job_cancel: Callback to handle any new job cancellations.
         """
         callback_handler = JobCancellationHandler(callback_on_job_cancel)
-        self.broker_if.add_queue_subscription(
+        self.broker_if.declare_queue_and_add_subscription(
             queue_name=OmotesQueueNames.job_cancel_queue_name(),
             callback_on_message=callback_handler.callback_on_job_cancelled_wrapped,
             queue_type=AMQPQueueType.DURABLE,
@@ -144,7 +144,7 @@ class SDKInterface:
         :param callback_on_request_workflows: Callback to handle workflow updates.
         """
         callback_handler = RequestWorkflowsHandler(callback_on_request_workflows)
-        self.broker_if.add_queue_subscription(
+        self.broker_if.declare_queue_and_add_subscription(
             queue_name=OmotesQueueNames.request_available_workflows_queue_name(),
             callback_on_message=callback_handler.callback_on_request_workflows_wrapped,
             queue_type=AMQPQueueType.EXCLUSIVE,
