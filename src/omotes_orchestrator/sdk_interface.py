@@ -27,9 +27,7 @@ class JobSubmissionCallbackHandler:
     A `JobSubmissionCallbackHandler` is created per job submission queue.
     """
 
-    workflow_type: WorkflowType
-    """Messages received from this job submission queue are expected to have this workflow type."""
-    callback_on_new_job: Callable[[JobSubmission, Job], None]
+    callback_on_new_job: Callable[[JobSubmission], None]
     """Callback to handle any jobs that are submitted."""
 
     def callback_on_new_job_wrapped(self, message: bytes) -> None:
@@ -41,18 +39,7 @@ class JobSubmissionCallbackHandler:
         """
         submitted_job = JobSubmission()
         submitted_job.ParseFromString(message)
-
-        if self.workflow_type.workflow_type_name == submitted_job.workflow_type:
-            job = Job(uuid.UUID(submitted_job.uuid), self.workflow_type)
-            self.callback_on_new_job(submitted_job, job)
-        else:
-            logger.error(
-                "Received a job submission (id: %s) that was meant for workflow type %s but found "
-                "it on queue %s. Dropping message.",
-                submitted_job.uuid,
-                submitted_job.workflow_type,
-                self.workflow_type,
-            )
+        self.callback_on_new_job(submitted_job)
 
 
 @dataclass
@@ -120,20 +107,19 @@ class SDKInterface:
         self.broker_if.stop()
 
     def connect_to_job_submissions(
-        self, callback_on_new_job: Callable[[JobSubmission, Job], None]
+        self, callback_on_new_job: Callable[[JobSubmission], None]
     ) -> None:
         """Connect to the job submission queue for each workflow type.
 
         :param callback_on_new_job: Callback to handle any new job submission.
         """
-        for workflow_type in self.workflow_type_manager.get_all_workflows():
-            callback_handler = JobSubmissionCallbackHandler(workflow_type, callback_on_new_job)
-            self.broker_if.add_queue_subscription(
-                queue_name=OmotesQueueNames.job_submission_queue_name(workflow_type),
-                callback_on_message=callback_handler.callback_on_new_job_wrapped,
-                queue_type=AMQPQueueType.DURABLE,
-                exchange_name=OmotesQueueNames.omotes_exchange_name(),
-            )
+        callback_handler = JobSubmissionCallbackHandler(callback_on_new_job)
+        self.broker_if.add_queue_subscription(
+            queue_name=OmotesQueueNames.job_submission_queue_name(),
+            callback_on_message=callback_handler.callback_on_new_job_wrapped,
+            queue_type=AMQPQueueType.DURABLE,
+            exchange_name=OmotesQueueNames.omotes_exchange_name(),
+        )
 
     def connect_to_job_cancellations(
         self, callback_on_job_cancel: Callable[[JobCancel], None]
@@ -195,9 +181,17 @@ class SDKInterface:
         :param job: Job to which the result belongs.
         :param result: The job result.
         """
+        self.send_job_result_by_job_id(job.id, result)
+
+    def send_job_result_by_job_id(self, job_uuid: uuid.UUID, result: JobResult) -> None:
+        """Send the job result to the SDK.
+
+        :param job_uuid: Identifier of the job to which the result belongs.
+        :param result: The job result.
+        """
         self.broker_if.send_message_to(
             exchange_name=OmotesQueueNames.omotes_exchange_name(),
-            routing_key=OmotesQueueNames.job_results_queue_name(job),
+            routing_key=OmotesQueueNames.job_results_queue_name(job_uuid),
             message=result.SerializeToString(),
         )
 
