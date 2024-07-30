@@ -104,7 +104,7 @@ class PostgresInterface:
         self,
         job_id: uuid.UUID,
         workflow_type: str,
-        timeout_after: timedelta,
+        timeout_after: Optional[timedelta],
     ) -> None:
         """Insert a new job into the database.
 
@@ -115,12 +115,19 @@ class PostgresInterface:
         :param timeout_after: Maximum duration before the job is terminated due to timing out.
         """
         with session_scope() as session:
+            # If timeout_after is not given,
+            # timeout_after_ms is registered as null in the database.
+            if timeout_after is not None:
+                timeout_after_ms = round(timeout_after.total_seconds() * 1000)
+            else:
+                timeout_after_ms = None
+
             new_job = JobDB(
                 job_id=job_id,
                 workflow_type=workflow_type,
                 status=JobStatus.REGISTERED,
                 registered_at=datetime.now(timezone.utc),
-                timeout_after_ms=round(timeout_after.total_seconds() * 1000),
+                timeout_after_ms=timeout_after_ms,
             )
             session.add(new_job)
         LOGGER.debug("Job %s is submitted as new job in database", job_id)

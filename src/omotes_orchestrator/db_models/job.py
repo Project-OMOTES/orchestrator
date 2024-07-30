@@ -49,5 +49,5 @@ class JobDB(Base):
     """Time at which the job is submitted to Celery."""
     running_at: Optional[datetime] = db.Column(db.DateTime(timezone=True))
     """Time at which a Celery worker has started the task for this job."""
-    timeout_after_ms: int = db.Column(db.Integer)
+    timeout_after_ms: Optional[int] = db.Column(db.Integer)
     """Duration the job may run for before being cancelled due to timing out."""
