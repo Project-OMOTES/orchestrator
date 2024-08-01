@@ -276,10 +276,20 @@ class Orchestrator:
             )
         else:
             logger.debug("New job %s was not yet registered. Registering and submitting.")
+
+            if not job_submission.HasField("timeout_ms"):
+                timeout_after_ms = None
+                logger.warning("New job timeout_ms is unset, "
+                               "registering timeout_after_ms as null.")
+            else:
+                timeout_after_ms = timedelta(
+                    milliseconds=job_submission.timeout_ms
+                )
+
             self.postgresql_if.put_new_job(
                 job_id=job.id,
                 workflow_type=job_submission.workflow_type,
-                timeout_after=timedelta(milliseconds=job_submission.timeout_ms),
+                timeout_after=timeout_after_ms,
             )
             submit = True
 

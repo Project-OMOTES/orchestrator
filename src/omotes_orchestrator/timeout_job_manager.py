@@ -121,13 +121,20 @@ class TimeoutJobManager:
     def job_is_timedout(job: JobDB) -> bool:
         """Check if the job is timed out.
 
+        The check is only executed if the job.status is RUNNING,
+        job.running_at, and job.timeout_after_ms are both not None.
+
         :param job: Database job row
-        :return: True if the job status is RUNNING and the current time exceeds
-        the job running time + configured job timeout delta
+        :return: True if the current time exceeds the
+        job running time + configured job timeout delta
         """
-        if job.status == JobStatus.RUNNING and job.running_at:
+        if (job.status == JobStatus.RUNNING
+                and job.running_at
+                and job.timeout_after_ms is not None):
             job_tz = job.running_at.tzinfo
             cur_time_tz = datetime.now(job_tz)
-            return cur_time_tz > job.running_at + timedelta(milliseconds=job.timeout_after_ms)
+            return cur_time_tz > (
+                job.running_at + timedelta(milliseconds=job.timeout_after_ms)
+            )
         else:
             return False
