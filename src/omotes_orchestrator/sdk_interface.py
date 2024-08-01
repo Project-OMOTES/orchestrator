@@ -159,7 +159,7 @@ class SDKInterface:
         """
         self.broker_if.send_message_to(
             exchange_name=OmotesQueueNames.omotes_exchange_name(),
-            routing_key=OmotesQueueNames.job_progress_queue_name(job),
+            routing_key=OmotesQueueNames.job_progress_queue_name(job.id),
             message=progress_update.SerializeToString(),
         )
 
@@ -171,7 +171,7 @@ class SDKInterface:
         """
         self.broker_if.send_message_to(
             exchange_name=OmotesQueueNames.omotes_exchange_name(),
-            routing_key=OmotesQueueNames.job_status_queue_name(job),
+            routing_key=OmotesQueueNames.job_status_queue_name(job.id),
             message=status_update.SerializeToString(),
         )
 
