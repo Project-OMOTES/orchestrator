@@ -247,7 +247,7 @@ class Orchestrator:
         logger.info("Received an available workflows request")
         self.omotes_sdk_if.send_available_workflows()
 
-    def new_job_submitted_handler(self, job_submission: JobSubmission, job: Job) -> None:
+    def new_job_submitted_handler(self, job_submission: JobSubmission) -> None:
         """When a new job is submitted through OMOTES SDK.
 
         Note: This function must be idempotent. It should submit a task to Celery and register it
@@ -258,8 +258,29 @@ class Orchestrator:
         is running but this function has not been successful.
 
         :param job_submission: Job submission message.
-        :param job: Reference to the submitted job.
         """
+        workflow_type = self.workflow_manager.get_workflow_by_name(job_submission.workflow_type)
+        job_uuid = uuid.UUID(job_submission.uuid)
+        if workflow_type is None:
+            logger.warning(
+                "Received a new job (id %s) with unknown workflow type %s. Ignoring job.",
+                job_submission.uuid,
+                job_submission.workflow_type,
+            )
+            self.omotes_sdk_if.send_job_result_by_job_id(
+                job_uuid=job_uuid,
+                result=JobResult(
+                    uuid=job_submission.uuid,
+                    result_type=JobResult.ResultType.ERROR,
+                    output_esdl=None,
+                    logs=f"Workflow type {job_submission.workflow_type} is unknown by orchestrator "
+                    f"at the time this submission was received.",
+                ),
+            )
+            return
+
+        job = Job(job_uuid, workflow_type)
+
         logger.info(
             "Received new job %s for workflow type %s", job.id, job_submission.workflow_type
         )
