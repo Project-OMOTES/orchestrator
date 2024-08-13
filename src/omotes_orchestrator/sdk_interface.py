@@ -151,6 +151,19 @@ class SDKInterface:
             exchange_name=OmotesQueueNames.omotes_exchange_name(),
         )
 
+    def declare_dead_letter_queue(self) -> None:
+        """Declare the dead letter queue.
+
+        TODO: subscribe to the queue and log incoming dead lettered messages without consuming them,
+        so messages stay in the queue until further intervention."
+        TODO? periodically list the dead letter messages or expose them to the client in some ways.
+        """
+        self.broker_if.declare_queue(
+            queue_name=OmotesQueueNames.dead_letter_queue_name(),
+            queue_type=AMQPQueueType.DURABLE,
+            exchange_name=OmotesQueueNames.omotes_exchange_name(),
+        )
+
     def send_job_progress_update(self, job: Job, progress_update: JobProgressUpdate) -> None:
         """Send a job progress update to the SDK.
 
