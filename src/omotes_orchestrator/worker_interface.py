@@ -94,7 +94,7 @@ class WorkerInterface:
         :param callback_on_worker_task_result: Callback to handle results from the Celery workers.
         """
         callback_handler = TaskResultHandler(callback_on_worker_task_result)
-        self.worker_broker_if.add_queue_subscription(
+        self.worker_broker_if.declare_queue_and_add_subscription(
             queue_name="omotes_task_result_events",
             callback_on_message=callback_handler.callback_on_worker_task_result_wrapped,
             queue_type=AMQPQueueType.DURABLE,
@@ -109,7 +109,7 @@ class WorkerInterface:
             the Celery workers.
         """
         callback_handler = TaskProgressUpdateHandler(callback_on_worker_task_progress_update)
-        self.worker_broker_if.add_queue_subscription(
+        self.worker_broker_if.declare_queue_and_add_subscription(
             queue_name="omotes_task_progress_events",
             callback_on_message=callback_handler.callback_on_worker_task_result_wrapped,
             queue_type=AMQPQueueType.DURABLE,
