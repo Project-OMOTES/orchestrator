@@ -227,7 +227,9 @@ class Orchestrator:
         )
         self.omotes_sdk_if.send_available_workflows()
 
-        self.omotes_sdk_if.declare_dead_letter_queue()
+        self.omotes_sdk_if.connect_to_job_result_dead_letter_queue(
+            callback_on_dead_lettered_job_result=self.dead_lettered_job_result_handler
+        )
 
         self.postgres_job_manager.start()
         self.timeout_job_manager.start()
@@ -248,6 +250,12 @@ class Orchestrator:
         """
         logger.info("Received an available workflows request")
         self.omotes_sdk_if.send_available_workflows()
+
+    def dead_lettered_job_result_handler(self, job_result: JobResult) -> None:
+        """TODO."""
+        logger.info("Received a dead lettered job result: %s with result type as: %s.",
+                    job_result.uuid,
+                    job_result.result_type)
 
     def new_job_submitted_handler(self, job_submission: JobSubmission) -> None:
         """When a new job is submitted through OMOTES SDK.

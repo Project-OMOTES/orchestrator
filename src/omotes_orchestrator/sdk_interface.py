@@ -78,6 +78,20 @@ class RequestWorkflowsHandler:
         self.callback_on_request_workflows(request_available_workflows)
 
 
+@dataclass
+class DeadLetteredJobResultHandler:
+    """TODO."""
+
+    callback_on_dead_lettered_job_result: Callable[[JobResult], None]
+
+    def callback_on_dead_lettered_job_result_wrapped(self, message: bytes) -> None:
+        """TODO."""
+        dead_lettered_job = JobResult()
+        dead_lettered_job.ParseFromString(message)
+
+        self.callback_on_dead_lettered_job_result(dead_lettered_job)
+
+
 class SDKInterface:
     """RabbitMQ interface specifically for the orchestrator."""
 
@@ -151,15 +165,25 @@ class SDKInterface:
             exchange_name=OmotesQueueNames.omotes_exchange_name(),
         )
 
-    def declare_dead_letter_queue(self) -> None:
-        """Declare the dead letter queue.
+    def connect_to_job_result_dead_letter_queue(
+            self, callback_on_dead_lettered_job_result: Callable[[JobResult], None]
+    ) -> None:
+        """Connect to the dead letter queue.
 
-        TODO: subscribe to the queue and log incoming dead lettered messages without consuming them,
-        so messages stay in the queue until further intervention."
+        :param callback_on_dead_lettered_job_result: Callback to handle a dead lettered job result.
+
+        TODO: persist the incoming message in the queue"
         TODO? periodically list the dead letter messages or expose them to the client in some ways.
         """
-        self.broker_if.declare_queue(
-            queue_name=OmotesQueueNames.dead_letter_queue_name(),
+        # self.broker_if.declare_queue(
+        #     queue_name=OmotesQueueNames.job_result_dead_letter_queue_name(),
+        #     queue_type=AMQPQueueType.DURABLE,
+        #     exchange_name=OmotesQueueNames.omotes_exchange_name(),
+        # )
+        callback_handler = DeadLetteredJobResultHandler(callback_on_dead_lettered_job_result)
+        self.broker_if.declare_queue_and_add_subscription(
+            queue_name=OmotesQueueNames.job_result_dead_letter_queue_name(),
+            callback_on_message=callback_handler.callback_on_dead_lettered_job_result_wrapped,
             queue_type=AMQPQueueType.DURABLE,
             exchange_name=OmotesQueueNames.omotes_exchange_name(),
         )
