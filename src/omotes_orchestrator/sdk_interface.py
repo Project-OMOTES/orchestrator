@@ -80,12 +80,16 @@ class RequestWorkflowsHandler:
 
 @dataclass
 class DeadLetteredJobResultHandler:
-    """TODO."""
+    """Handler to set up callback when receiving a dead lettered job result."""
 
     callback_on_dead_lettered_job_result: Callable[[JobResult], None]
+    """Callback to call when a dead lettered job result is received."""
 
     def callback_on_dead_lettered_job_result_wrapped(self, message: bytes) -> None:
-        """TODO."""
+        """Prepare the dead lettered `JobResult` message before passing them to the callback.
+
+        :param message: Serialized AMQP message containing a dead lettered job result.
+        """
         dead_lettered_job = JobResult()
         dead_lettered_job.ParseFromString(message)
 
@@ -168,18 +172,10 @@ class SDKInterface:
     def connect_to_job_result_dead_letter_queue(
             self, callback_on_dead_lettered_job_result: Callable[[JobResult], None]
     ) -> None:
-        """Connect to the dead letter queue.
+        """Connect to the job result dead letter queue.
 
         :param callback_on_dead_lettered_job_result: Callback to handle a dead lettered job result.
-
-        TODO: persist the incoming message in the queue"
-        TODO? periodically list the dead letter messages or expose them to the client in some ways.
         """
-        # self.broker_if.declare_queue(
-        #     queue_name=OmotesQueueNames.job_result_dead_letter_queue_name(),
-        #     queue_type=AMQPQueueType.DURABLE,
-        #     exchange_name=OmotesQueueNames.omotes_exchange_name(),
-        # )
         callback_handler = DeadLetteredJobResultHandler(callback_on_dead_lettered_job_result)
         self.broker_if.declare_queue_and_add_subscription(
             queue_name=OmotesQueueNames.job_result_dead_letter_queue_name(),

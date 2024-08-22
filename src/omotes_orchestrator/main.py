@@ -1,10 +1,11 @@
+import os
 import logging
 import signal
 import sys
 import threading
 import pprint
 import uuid
-from datetime import timedelta
+from datetime import timedelta, datetime
 from types import FrameType
 from typing import Any, Union
 
@@ -251,12 +252,6 @@ class Orchestrator:
         logger.info("Received an available workflows request")
         self.omotes_sdk_if.send_available_workflows()
 
-    def dead_lettered_job_result_handler(self, job_result: JobResult) -> None:
-        """TODO."""
-        logger.info("Received a dead lettered job result: %s with result type as: %s.",
-                    job_result.uuid,
-                    job_result.result_type)
-
     def new_job_submitted_handler(self, job_submission: JobSubmission) -> None:
         """When a new job is submitted through OMOTES SDK.
 
@@ -405,6 +400,40 @@ class Orchestrator:
                     ),
                 )
                 self._cleanup_job(job_id)
+
+    def dead_lettered_job_result_handler(self, job_result: JobResult) -> None:
+        """Handle the received dead lettered job result.
+
+        When the log level is set at the DEBUG level, the dead lettered job result will be written
+        to a local file.
+
+        :param job_result: Job result message.
+        """
+        logger.info("Received a dead lettered job_%s_result with result type as: %s",
+                    job_result.uuid,
+                    job_result.result_type)
+
+        log_level = logger.getEffectiveLevel()
+        if log_level == logging.DEBUG:
+            try:
+                log_dir = "../logs"
+                if not os.path.exists(log_dir):
+                    os.makedirs(log_dir)
+
+                cur_time = datetime.now().strftime("%Y%m%d-%H%M%S")
+                file_name = f"{cur_time}_dead_lettered_job_{job_result.uuid}_result.txt"
+                file_path = os.path.join(log_dir, file_name)
+                with open(file_path, "a") as f:
+                    f.write("--------------Logs:\n")
+                    f.write(job_result.logs + "\n")
+                    f.write("--------------Status:\n")
+                    f.write(str(job_result.result_type) + "\n")
+                    f.write("--------------ESDL:\n")
+                    f.write(job_result.output_esdl + "\n")
+
+                logger.info("The job result is logged to: %s", file_path)
+            except Exception as e:
+                logger.warning("An error occurred while logging the job result: %s", e)
 
     def _cleanup_job(self, job_id: uuid.UUID) -> None:
         """Cleanup any references to job with id `job_id`.
