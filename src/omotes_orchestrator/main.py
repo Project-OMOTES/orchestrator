@@ -228,9 +228,9 @@ class Orchestrator:
         )
         self.omotes_sdk_if.send_available_workflows()
 
-        # self.omotes_sdk_if.connect_to_job_result_dead_letter_queue(
-        #     callback_on_dead_lettered_job_result=self.dead_lettered_job_result_handler
-        # )
+        self.omotes_sdk_if.connect_to_job_result_dead_letter_queue(
+            callback_on_dead_lettered_job_result=self.dead_lettered_job_result_handler
+        )
 
         self.postgres_job_manager.start()
         self.timeout_job_manager.start()
