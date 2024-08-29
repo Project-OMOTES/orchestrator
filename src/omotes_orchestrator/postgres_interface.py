@@ -248,9 +248,17 @@ class PostgresInterface:
         return jobs
 
     def count_job_starts(self, job_id: uuid.UUID) -> int:
+        """Count how many records are stored that a specific job has been started.
+
+        :return: Number of job starts
+        """
         with session_scope() as session:
             stmnt = (
                 select(func.count()).select_from(JobStartsDB).where(JobStartsDB.job_id == job_id)
             )
             count = session.scalar(stmnt)
+
+            if count is None:
+                count = 0
+
         return count
