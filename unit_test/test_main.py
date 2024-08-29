@@ -693,17 +693,6 @@ class OrchestratorTest(unittest.TestCase):
         workflow_type = WorkflowType(
             workflow_type_name=workflow_type_name, workflow_type_description_name="description"
         )
-        job = Job(id=job_id, workflow_type=workflow_type)
-
-        job_db = JobDB(
-            job_id=job_id,
-            celery_id=str(celery_task_id),
-            workflow_type=workflow_type_name,
-            status=JobStatusDB.SUBMITTED,
-            registered_at=datetime.datetime.fromisoformat("2024-08-29T14:00:00"),
-            submitted_at=datetime.datetime.fromisoformat("2024-08-29T14:00:01"),
-            timeout_after_ms=10_000,
-        )
         task_progress_update = TaskProgressUpdate(
             job_id=str(job_id),
             celery_task_id=str(celery_task_id),
