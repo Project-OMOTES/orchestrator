@@ -16,6 +16,7 @@ from omotes_sdk_protocol.job_pb2 import JobSubmission, JobProgressUpdate, JobSta
 from google.protobuf import json_format
 from google.protobuf.struct_pb2 import Struct
 
+from omotes_orchestrator.config import OrchestratorConfig
 from omotes_orchestrator.db_models.job import JobStatus as JobStatusDB, JobDB
 from omotes_orchestrator.main import (
     LifeCycleBarrierManager,
@@ -180,6 +181,7 @@ class OrchestratorTest(unittest.TestCase):
                 "omotes_orchestrator.main.LifeCycleBarrierManager"
             ) as life_cycle_barrier_manager_class_mock:
                 self.orchestrator = Orchestrator(
+                    config=OrchestratorConfig(),
                     omotes_orchestrator_sdk_if=self.omotes_orchestrator_sdk_if,
                     worker_if=self.worker_if,
                     celery_if=self.celery_if,

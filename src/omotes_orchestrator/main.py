@@ -583,14 +583,13 @@ class Orchestrator:
 
             if progress_update.progress == 0:  # first progress indicating calculation start
                 logger.debug("Progress update was the first. Setting job %s to RUNNING", job.id)
-                THRESHOLD = 1
                 amount_of_starts = self.postgresql_if.count_job_starts(job.id)
                 logger.debug("Job %s has started %s times previously.", job.id, amount_of_starts)
-                if amount_of_starts >= THRESHOLD:
+                if amount_of_starts >= self.config.delivery_limit_threshold_per_job:
                     logger.error(
                         "Job %s has been started too many times (limit %s). Cancelling.",
                         job.id,
-                        THRESHOLD,
+                        self.config.delivery_limit_threshold_per_job,
                     )
                     self.celery_if.cancel_workflow(job_db.celery_id)
                     self.omotes_sdk_if.send_job_status_update(
