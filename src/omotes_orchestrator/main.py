@@ -139,6 +139,8 @@ class LifeCycleBarrierManager:
 class Orchestrator:
     """Orchestrator application."""
 
+    config: OrchestratorConfig
+    """Configuration parameters for Orchestrator application."""
     omotes_sdk_if: SDKInterface
     """Interface to OMOTES SDK from orchestrator-side."""
     worker_if: WorkerInterface
@@ -158,6 +160,7 @@ class Orchestrator:
 
     def __init__(
         self,
+        config: OrchestratorConfig,
         omotes_orchestrator_sdk_if: SDKInterface,
         worker_if: WorkerInterface,
         celery_if: CeleryInterface,
@@ -168,6 +171,7 @@ class Orchestrator:
     ):
         """Construct the orchestrator.
 
+        :param config: Configuration parameters for Orchestrator application.
         :param omotes_orchestrator_sdk_if: Interface to OMOTES SDK.
         :param worker_if: Interface to RabbitMQ, Celery side for events and results send by workers
             outside of Celery.
@@ -177,6 +181,7 @@ class Orchestrator:
         :param postgres_job_manager: Manage and clean up postgres stale job rows.
         :param timeout_job_manager: Cancel and delete the job when it is timed out.
         """
+        self.config = config
         self.omotes_sdk_if = omotes_orchestrator_sdk_if
         self.worker_if = worker_if
         self.celery_if = celery_if
@@ -648,12 +653,13 @@ def main() -> None:
     )
     orchestrator_if = SDKInterface(config.rabbitmq_omotes, workflow_type_manager)
     celery_if = CeleryInterface(config.celery_config)
-    worker_if = WorkerInterface(config.rabbitmq_worker_events)
+    worker_if = WorkerInterface(config)
     postgresql_if = PostgresInterface(config.postgres_config)
     postgres_job_manager = PostgresJobManager(postgresql_if, config.postgres_job_manager_config)
     timeout_job_manager = TimeoutJobManager(postgresql_if, None, config.timeout_job_manager_config)
 
     orchestrator = Orchestrator(
+        config,
         orchestrator_if,
         worker_if,
         celery_if,
