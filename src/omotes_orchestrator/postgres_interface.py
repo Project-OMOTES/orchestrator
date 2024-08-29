@@ -4,11 +4,11 @@ from datetime import datetime, timedelta, timezone
 import logging
 from typing import Generator, Optional
 
-from sqlalchemy import select, update, create_engine, orm
+from sqlalchemy import select, update, create_engine, orm, func, delete
 from sqlalchemy.orm import Session as SQLSession
 from sqlalchemy.engine import Engine, URL
 
-from omotes_orchestrator.db_models.job import JobDB, JobStatus
+from omotes_orchestrator.db_models import JobDB, JobStatus, JobStartsDB
 from omotes_orchestrator.config import PostgreSQLConfig
 
 LOGGER = logging.getLogger("omotes_orchestrator")
@@ -146,7 +146,7 @@ class PostgresInterface:
                 .values(
                     status=JobStatus.SUBMITTED,
                     submitted_at=datetime.now(timezone.utc),
-                    celery_id=celery_id
+                    celery_id=celery_id,
                 )
             )
             session.execute(stmnt)
@@ -158,12 +158,15 @@ class PostgresInterface:
         """
         LOGGER.debug("Started job with id '%s'", job_id)
         with session_scope() as session:
-            stmnt = (
+            started_at = datetime.now(timezone.utc)
+            stmnt1 = (
                 update(JobDB)
                 .where(JobDB.job_id == job_id)
-                .values(status=JobStatus.RUNNING, running_at=datetime.now(timezone.utc))
+                .values(status=JobStatus.RUNNING, running_at=started_at)
             )
-            session.execute(stmnt)
+            session.execute(stmnt1)
+
+            session.add(JobStartsDB(job_id=job_id, started_at=started_at))
 
     def get_job_status(self, job_id: uuid.UUID) -> Optional[JobStatus]:
         """Retrieve the current job status.
@@ -211,10 +214,12 @@ class PostgresInterface:
         """
         LOGGER.debug("Deleting job with id '%s'", job_id)
         with session_scope() as session:
-            stmnt = select(JobDB).where(JobDB.job_id == job_id)
-            job = session.scalar(stmnt)
+            find_stmnt = select(JobDB).where(JobDB.job_id == job_id)
+            job = session.scalar(find_stmnt)
             result = False
             if job:
+                delete_job_starts_stmnt = delete(JobStartsDB).where(JobStartsDB.job_id == job_id)
+                session.execute(delete_job_starts_stmnt)
                 session.delete(job)
                 result = True
 
@@ -241,3 +246,11 @@ class PostgresInterface:
             stmnt = select(JobDB)
             jobs = list(session.scalars(stmnt).all())
         return jobs
+
+    def count_job_starts(self, job_id: uuid.UUID) -> int:
+        with session_scope() as session:
+            stmnt = (
+                select(func.count()).select_from(JobStartsDB).where(JobStartsDB.job_id == job_id)
+            )
+            count = session.scalar(stmnt)
+        return count

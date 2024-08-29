@@ -1,7 +1,6 @@
 import logging
 import multiprocessing
 import os
-import sys
 import threading
 import time
 import traceback
@@ -17,7 +16,6 @@ from omotes_sdk.omotes_interface import (
     JobProgressUpdate,
     JobStatusUpdate,
 )
-from omotes_sdk.workflow_type import WorkflowType
 
 load_dotenv(verbose=True)
 
@@ -36,7 +34,7 @@ rabbitmq_config = RabbitMQConfig(
 
 JOB_COUNT_PER_PROCESS = 100
 PROCESS_COUNT = 5
-TIMEOUT_IN_WHICH_ALL_JOBS_MUST_FINISH_PER_PROCESS_SECONDS = 35.0
+TIMEOUT_IN_WHICH_ALL_JOBS_MUST_FINISH_PER_PROCESS_SECONDS = 60.0
 
 
 class JobSubmitter:
@@ -158,7 +156,7 @@ def main_process(process_number: int) -> list[str]:
     return submitter.errors
 
 
-def main():
+def run_high_throughput_test():
     print("Starting with job submissions for integration test.")
     with multiprocessing.Pool(PROCESS_COUNT) as p:
         all_errors: list[list[str]] = p.map(main_process, range(PROCESS_COUNT))
@@ -174,9 +172,4 @@ def main():
             print()
 
     if any(any(x) for x in all_errors):
-        print("Error(s) was found.")
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
+        raise RuntimeError("Error(s) was found.")

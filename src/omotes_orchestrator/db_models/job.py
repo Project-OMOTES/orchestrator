@@ -5,10 +5,9 @@ from enum import Enum
 from typing import Optional
 
 import sqlalchemy as db
-from sqlalchemy.orm import declarative_base
 from sqlalchemy.dialects.postgresql import UUID
 
-Base = declarative_base()
+from omotes_orchestrator.db_models.base import Base
 
 
 class JobStatus(Enum):
@@ -39,7 +38,7 @@ class JobDB(Base):
     """OMOTES identifier for the job."""
     celery_id: Optional[str] = db.Column(db.String, nullable=True)
     """Celery identifier for the task. Only available if job is submitted to Celery."""
-    workflow_type: str = db.Column(db.String)
+    workflow_type: str = db.Column(db.String, nullable=False)
     """Name of the workflow this job runs."""
     status: JobStatus = db.Column(db.Enum(JobStatus), nullable=False)
     """Current status of the job."""

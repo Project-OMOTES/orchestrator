@@ -228,9 +228,9 @@ class Orchestrator:
         )
         self.omotes_sdk_if.send_available_workflows()
 
-        self.omotes_sdk_if.connect_to_job_result_dead_letter_queue(
-            callback_on_dead_lettered_job_result=self.dead_lettered_job_result_handler
-        )
+        # self.omotes_sdk_if.connect_to_job_result_dead_letter_queue(
+        #     callback_on_dead_lettered_job_result=self.dead_lettered_job_result_handler
+        # )
 
         self.postgres_job_manager.start()
         self.timeout_job_manager.start()
@@ -305,12 +305,11 @@ class Orchestrator:
 
             if not job_submission.HasField("timeout_ms"):
                 timeout_after_ms = None
-                logger.warning("New job timeout_ms is unset, "
-                               "registering timeout_after_ms as null.")
-            else:
-                timeout_after_ms = timedelta(
-                    milliseconds=job_submission.timeout_ms
+                logger.debug(
+                    "Timeout_ms is unset for new job, registering timeout_after_ms as null."
                 )
+            else:
+                timeout_after_ms = timedelta(milliseconds=job_submission.timeout_ms)
 
             self.postgresql_if.put_new_job(
                 job_id=job.id,
@@ -409,9 +408,11 @@ class Orchestrator:
 
         :param job_result: Job result message.
         """
-        logger.info("Received a dead lettered job_%s_result with result type as: %s",
-                    job_result.uuid,
-                    job_result.result_type)
+        logger.info(
+            "Received a dead lettered job_%s_result with result type as: %s",
+            job_result.uuid,
+            job_result.result_type,
+        )
 
         log_level = logger.getEffectiveLevel()
         if log_level == logging.DEBUG:
@@ -577,14 +578,46 @@ class Orchestrator:
 
             if progress_update.progress == 0:  # first progress indicating calculation start
                 logger.debug("Progress update was the first. Setting job %s to RUNNING", job.id)
-                self.omotes_sdk_if.send_job_status_update(
-                    job=job,
-                    status_update=JobStatusUpdate(
-                        uuid=str(job.id),
-                        status=JobStatusUpdate.JobStatus.RUNNING,
-                    ),
-                )
-                self.postgresql_if.set_job_running(job.id)
+                THRESHOLD = 1
+                amount_of_starts = self.postgresql_if.count_job_starts(job.id)
+                logger.debug("Job %s has started %s times previously.", job.id, amount_of_starts)
+                if amount_of_starts >= THRESHOLD:
+                    logger.error(
+                        "Job %s has been started too many times (limit %s). Cancelling.",
+                        job.id,
+                        THRESHOLD,
+                    )
+                    self.celery_if.cancel_workflow(job_db.celery_id)
+                    self.omotes_sdk_if.send_job_status_update(
+                        job=job,
+                        status_update=JobStatusUpdate(
+                            uuid=str(job.id), status=JobStatusUpdate.JobStatus.CANCELLED
+                        ),
+                    )
+                    self.omotes_sdk_if.send_job_result(
+                        job=job,
+                        result=JobResult(
+                            uuid=str(job.id),
+                            result_type=JobResult.ResultType.ERROR,
+                            output_esdl=None,
+                            logs="Job cannot be processed due to being retried the maximum "
+                            "number of times.",
+                        ),
+                    )
+
+                    self._cleanup_job(job.id)
+                    return
+                else:
+                    self.postgresql_if.set_job_running(job.id)
+
+                    self.omotes_sdk_if.send_job_status_update(
+                        job=job,
+                        status_update=JobStatusUpdate(
+                            uuid=str(job.id),
+                            status=JobStatusUpdate.JobStatus.RUNNING,
+                        ),
+                    )
+
             logger.debug(
                 "Sending progress update %s (msg: %s) for job %s",
                 progress_update.progress,
