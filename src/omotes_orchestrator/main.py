@@ -156,6 +156,9 @@ class Orchestrator:
     """Cancel and delete the job when it is timed out."""
     _init_barriers: LifeCycleBarrierManager
 
+    LOGS_LOCAL_DIR: str = "../logs"
+    """The local directory path to keep log files."""
+
     def __init__(
         self,
         omotes_orchestrator_sdk_if: SDKInterface,
@@ -404,8 +407,8 @@ class Orchestrator:
     def dead_lettered_job_result_handler(self, job_result: JobResult) -> None:
         """Handle the received dead lettered job result.
 
-        When the log level is set at the DEBUG level, the dead lettered job result will be written
-        to a local file.
+        When the log level is set at the DEBUG level or below,
+        the dead lettered job result will be written to a local file.
 
         :param job_result: Job result message.
         """
@@ -414,9 +417,9 @@ class Orchestrator:
                     job_result.result_type)
 
         log_level = logger.getEffectiveLevel()
-        if log_level == logging.DEBUG:
+        if log_level <= logging.DEBUG:
             try:
-                log_dir = "../logs"
+                log_dir = self.LOGS_LOCAL_DIR
                 if not os.path.exists(log_dir):
                     os.makedirs(log_dir)
 
