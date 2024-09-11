@@ -78,6 +78,24 @@ class RequestWorkflowsHandler:
         self.callback_on_request_workflows(request_available_workflows)
 
 
+@dataclass
+class DeadLetteredJobResultHandler:
+    """Handler to set up callback when receiving a dead lettered job result."""
+
+    callback_on_dead_lettered_job_result: Callable[[JobResult], None]
+    """Callback to call when a dead lettered job result is received."""
+
+    def callback_on_dead_lettered_job_result_wrapped(self, message: bytes) -> None:
+        """Prepare the dead lettered `JobResult` message before passing them to the callback.
+
+        :param message: Serialized AMQP message containing a dead lettered job result.
+        """
+        dead_lettered_job = JobResult()
+        dead_lettered_job.ParseFromString(message)
+
+        self.callback_on_dead_lettered_job_result(dead_lettered_job)
+
+
 class SDKInterface:
     """RabbitMQ interface specifically for the orchestrator."""
 
@@ -148,6 +166,21 @@ class SDKInterface:
             queue_name=OmotesQueueNames.request_available_workflows_queue_name(),
             callback_on_message=callback_handler.callback_on_request_workflows_wrapped,
             queue_type=AMQPQueueType.EXCLUSIVE,
+            exchange_name=OmotesQueueNames.omotes_exchange_name(),
+        )
+
+    def connect_to_job_result_dead_letter_queue(
+            self, callback_on_dead_lettered_job_result: Callable[[JobResult], None]
+    ) -> None:
+        """Connect to the job result dead letter queue.
+
+        :param callback_on_dead_lettered_job_result: Callback to handle a dead lettered job result.
+        """
+        callback_handler = DeadLetteredJobResultHandler(callback_on_dead_lettered_job_result)
+        self.broker_if.declare_queue_and_add_subscription(
+            queue_name=OmotesQueueNames.job_result_dead_letter_queue_name(),
+            callback_on_message=callback_handler.callback_on_dead_lettered_job_result_wrapped,
+            queue_type=AMQPQueueType.DURABLE,
             exchange_name=OmotesQueueNames.omotes_exchange_name(),
         )
 

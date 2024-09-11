@@ -1,10 +1,11 @@
+import os
 import logging
 import signal
 import sys
 import threading
 import pprint
 import uuid
-from datetime import timedelta
+from datetime import timedelta, datetime
 from types import FrameType
 from typing import Any, Union
 
@@ -155,6 +156,9 @@ class Orchestrator:
     """Cancel and delete the job when it is timed out."""
     _init_barriers: LifeCycleBarrierManager
 
+    LOGS_LOCAL_DIR: str = "../logs"
+    """The local directory path to keep log files."""
+
     def __init__(
         self,
         omotes_orchestrator_sdk_if: SDKInterface,
@@ -226,6 +230,10 @@ class Orchestrator:
             callback_on_request_workflows=self.request_workflows_handler
         )
         self.omotes_sdk_if.send_available_workflows()
+
+        self.omotes_sdk_if.connect_to_job_result_dead_letter_queue(
+            callback_on_dead_lettered_job_result=self.dead_lettered_job_result_handler
+        )
 
         self.postgres_job_manager.start()
         self.timeout_job_manager.start()
@@ -395,6 +403,40 @@ class Orchestrator:
                     ),
                 )
                 self._cleanup_job(job_id)
+
+    def dead_lettered_job_result_handler(self, job_result: JobResult) -> None:
+        """Handle the received dead lettered job result.
+
+        When the log level is set at the DEBUG level or below,
+        the dead lettered job result will be written to a local file.
+
+        :param job_result: Job result message.
+        """
+        logger.info("Received a dead lettered job_%s_result with result type as: %s",
+                    job_result.uuid,
+                    job_result.result_type)
+
+        log_level = logger.getEffectiveLevel()
+        if log_level <= logging.DEBUG:
+            try:
+                log_dir = self.LOGS_LOCAL_DIR
+                if not os.path.exists(log_dir):
+                    os.makedirs(log_dir)
+
+                cur_time = datetime.now().strftime("%Y%m%d-%H%M%S")
+                file_name = f"{cur_time}_dead_lettered_job_{job_result.uuid}_result.txt"
+                file_path = os.path.join(log_dir, file_name)
+                with open(file_path, "a") as f:
+                    f.write("--------------Logs:\n")
+                    f.write(job_result.logs + "\n")
+                    f.write("--------------Status:\n")
+                    f.write(str(job_result.result_type) + "\n")
+                    f.write("--------------ESDL:\n")
+                    f.write(job_result.output_esdl + "\n")
+
+                logger.info("The job result is logged to: %s", file_path)
+            except Exception as e:
+                logger.warning("An error occurred while logging the job result: %s", e)
 
     def _cleanup_job(self, job_id: uuid.UUID) -> None:
         """Cleanup any references to job with id `job_id`.
