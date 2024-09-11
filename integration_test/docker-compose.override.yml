@@ -60,6 +60,8 @@ services:
         condition: service_started
       test_hard_crash_worker:
         condition: service_started
+      test_long_sleep_worker:
+        condition: service_started
     environment:
       RABBITMQ_OMOTES_USER_NAME: ${RABBITMQ_OMOTES_USER_NAME}
       RABBITMQ_OMOTES_USER_PASSWORD: ${RABBITMQ_OMOTES_USER_PASSWORD}
