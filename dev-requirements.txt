@@ -107,11 +107,11 @@ mypy-extensions==1.0.0
     # via
     #   black
     #   mypy
-omotes-sdk-protocol==0.1.1
+omotes-sdk-protocol==0.1.4
     # via
     #   -c requirements.txt
     #   omotes-sdk-python
-omotes-sdk-python==3.0.0
+omotes-sdk-python==3.1.0
     # via
     #   -c requirements.txt
     #   orchestrator (pyproject.toml)
@@ -124,6 +124,7 @@ pamqp==3.3.0
     # via
     #   -c requirements.txt
     #   aiormq
+    #   omotes-sdk-python
 pathspec==0.11.2
     # via black
 platformdirs==4.1.0
