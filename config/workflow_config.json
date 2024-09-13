@@ -22,7 +22,8 @@
       {
         "parameter_type": "duration",
         "key_name": "timestep",
-        "description": "Duration of a timestep in milliseconds."
+        "description": "Duration of a timestep in seconds.",
+        "minimum": 0
       },
       {
         "parameter_type": "datetime",
