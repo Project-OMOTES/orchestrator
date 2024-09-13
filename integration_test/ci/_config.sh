@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CURRENT_WORKDIR=$PWD
+export CURRENT_WORKDIR=$PWD
 COMPUTATION_ENGINE="../computation-engine-at-orchestrator"
 ENV_FILE="${CURRENT_WORKDIR}/.env.test"
 DOCKER_COMPOSE_FILE="${COMPUTATION_ENGINE}/docker-compose.yml"

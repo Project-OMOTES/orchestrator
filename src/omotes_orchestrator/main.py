@@ -139,6 +139,8 @@ class LifeCycleBarrierManager:
 class Orchestrator:
     """Orchestrator application."""
 
+    config: OrchestratorConfig
+    """Configuration parameters for Orchestrator application."""
     omotes_sdk_if: SDKInterface
     """Interface to OMOTES SDK from orchestrator-side."""
     worker_if: WorkerInterface
@@ -161,6 +163,7 @@ class Orchestrator:
 
     def __init__(
         self,
+        config: OrchestratorConfig,
         omotes_orchestrator_sdk_if: SDKInterface,
         worker_if: WorkerInterface,
         celery_if: CeleryInterface,
@@ -171,6 +174,7 @@ class Orchestrator:
     ):
         """Construct the orchestrator.
 
+        :param config: Configuration parameters for Orchestrator application.
         :param omotes_orchestrator_sdk_if: Interface to OMOTES SDK.
         :param worker_if: Interface to RabbitMQ, Celery side for events and results send by workers
             outside of Celery.
@@ -180,6 +184,7 @@ class Orchestrator:
         :param postgres_job_manager: Manage and clean up postgres stale job rows.
         :param timeout_job_manager: Cancel and delete the job when it is timed out.
         """
+        self.config = config
         self.omotes_sdk_if = omotes_orchestrator_sdk_if
         self.worker_if = worker_if
         self.celery_if = celery_if
@@ -308,12 +313,11 @@ class Orchestrator:
 
             if not job_submission.HasField("timeout_ms"):
                 timeout_after_ms = None
-                logger.warning("New job timeout_ms is unset, "
-                               "registering timeout_after_ms as null.")
-            else:
-                timeout_after_ms = timedelta(
-                    milliseconds=job_submission.timeout_ms
+                logger.debug(
+                    "Timeout_ms is unset for new job, registering timeout_after_ms as null."
                 )
+            else:
+                timeout_after_ms = timedelta(milliseconds=job_submission.timeout_ms)
 
             self.postgresql_if.put_new_job(
                 job_id=job.id,
@@ -412,9 +416,11 @@ class Orchestrator:
 
         :param job_result: Job result message.
         """
-        logger.info("Received a dead lettered job_%s_result with result type as: %s",
-                    job_result.uuid,
-                    job_result.result_type)
+        logger.info(
+            "Received a dead lettered job_%s_result with result type as: %s",
+            job_result.uuid,
+            job_result.result_type,
+        )
 
         log_level = logger.getEffectiveLevel()
         if log_level <= logging.DEBUG:
@@ -580,14 +586,45 @@ class Orchestrator:
 
             if progress_update.progress == 0:  # first progress indicating calculation start
                 logger.debug("Progress update was the first. Setting job %s to RUNNING", job.id)
-                self.omotes_sdk_if.send_job_status_update(
-                    job=job,
-                    status_update=JobStatusUpdate(
-                        uuid=str(job.id),
-                        status=JobStatusUpdate.JobStatus.RUNNING,
-                    ),
-                )
-                self.postgresql_if.set_job_running(job.id)
+                amount_of_starts = self.postgresql_if.count_job_starts(job.id)
+                logger.debug("Job %s has started %s times previously.", job.id, amount_of_starts)
+                if amount_of_starts >= self.config.delivery_limit_threshold_per_job:
+                    logger.error(
+                        "Job %s has been started too many times (limit %s). Cancelling.",
+                        job.id,
+                        self.config.delivery_limit_threshold_per_job,
+                    )
+                    self.celery_if.cancel_workflow(job_db.celery_id)
+                    self.omotes_sdk_if.send_job_status_update(
+                        job=job,
+                        status_update=JobStatusUpdate(
+                            uuid=str(job.id), status=JobStatusUpdate.JobStatus.CANCELLED
+                        ),
+                    )
+                    self.omotes_sdk_if.send_job_result(
+                        job=job,
+                        result=JobResult(
+                            uuid=str(job.id),
+                            result_type=JobResult.ResultType.ERROR,
+                            output_esdl=None,
+                            logs="Job cannot be processed due to being retried the maximum "
+                            "number of times.",
+                        ),
+                    )
+
+                    self._cleanup_job(job.id)
+                    return
+                else:
+                    self.postgresql_if.set_job_running(job.id)
+
+                    self.omotes_sdk_if.send_job_status_update(
+                        job=job,
+                        status_update=JobStatusUpdate(
+                            uuid=str(job.id),
+                            status=JobStatusUpdate.JobStatus.RUNNING,
+                        ),
+                    )
+
             logger.debug(
                 "Sending progress update %s (msg: %s) for job %s",
                 progress_update.progress,
@@ -618,12 +655,13 @@ def main() -> None:
     )
     orchestrator_if = SDKInterface(config.rabbitmq_omotes, workflow_type_manager)
     celery_if = CeleryInterface(config.celery_config)
-    worker_if = WorkerInterface(config.rabbitmq_worker_events)
+    worker_if = WorkerInterface(config)
     postgresql_if = PostgresInterface(config.postgres_config)
     postgres_job_manager = PostgresJobManager(postgresql_if, config.postgres_job_manager_config)
     timeout_job_manager = TimeoutJobManager(postgresql_if, None, config.timeout_job_manager_config)
 
     orchestrator = Orchestrator(
+        config,
         orchestrator_if,
         worker_if,
         celery_if,

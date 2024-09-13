@@ -22,7 +22,7 @@ if config.config_file_name is not None:
 # target_metadata = mymodel.Base.metadata
 
 
-from omotes_orchestrator.db_models.job import Base
+from omotes_orchestrator.db_models import Base
 
 setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL", "INFO")), "omotes_orchestrator")
 setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL_SQL", "WARNING")), "sqlalchemy.engine")

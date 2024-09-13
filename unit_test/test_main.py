@@ -1,8 +1,9 @@
+import datetime
 import threading
 import time
 import unittest
 import uuid
-from datetime import timedelta, datetime
+from datetime import timedelta
 from multiprocessing.pool import ThreadPool, MapResult
 from typing import cast
 from unittest.mock import patch, Mock
@@ -10,19 +11,18 @@ from uuid import UUID
 
 from omotes_sdk.job import Job
 from omotes_sdk.workflow_type import WorkflowType
-from omotes_sdk_protocol.job_pb2 import JobSubmission
+from omotes_sdk.internal.orchestrator_worker_events.messages.task_pb2 import TaskProgressUpdate
+from omotes_sdk_protocol.job_pb2 import JobSubmission, JobProgressUpdate, JobStatusUpdate, JobResult
 from google.protobuf import json_format
 from google.protobuf.struct_pb2 import Struct
 
 from omotes_orchestrator.config import OrchestratorConfig
-from omotes_orchestrator.db_models.job import JobStatus, JobDB
+from omotes_orchestrator.db_models.job import JobStatus as JobStatusDB, JobDB
 from omotes_orchestrator.main import (
     LifeCycleBarrierManager,
     BarrierTimeoutException,
     MissingBarrierException,
     Orchestrator,
-    PostgresJobManager,
-    TimeoutJobManager,
 )
 
 
@@ -181,6 +181,7 @@ class OrchestratorTest(unittest.TestCase):
                 "omotes_orchestrator.main.LifeCycleBarrierManager"
             ) as life_cycle_barrier_manager_class_mock:
                 self.orchestrator = Orchestrator(
+                    config=OrchestratorConfig(),
                     omotes_orchestrator_sdk_if=self.omotes_orchestrator_sdk_if,
                     worker_if=self.worker_if,
                     celery_if=self.celery_if,
@@ -253,7 +254,7 @@ class OrchestratorTest(unittest.TestCase):
             mocked_orchestrator.life_cycle_barrier_manager_obj_mock
         )
 
-        postgresql_if.get_job_status.return_value = JobStatus.REGISTERED
+        postgresql_if.get_job_status.return_value = JobStatusDB.REGISTERED
         postgresql_if.job_exists.return_value = True
 
         job_id = uuid.uuid4()
@@ -297,7 +298,7 @@ class OrchestratorTest(unittest.TestCase):
         life_cycle_barrier_manager_obj_mock = (
             mocked_orchestrator.life_cycle_barrier_manager_obj_mock
         )
-        postgresql_if.get_job_status.return_value = JobStatus.SUBMITTED
+        postgresql_if.get_job_status.return_value = JobStatusDB.SUBMITTED
         postgresql_if.job_exists.return_value = True
 
         job_id = uuid.uuid4()
@@ -334,7 +335,7 @@ class OrchestratorTest(unittest.TestCase):
         life_cycle_barrier_manager_obj_mock = (
             mocked_orchestrator.life_cycle_barrier_manager_obj_mock
         )
-        postgresql_if.get_job_status.return_value = JobStatus.RUNNING
+        postgresql_if.get_job_status.return_value = JobStatusDB.RUNNING
         postgresql_if.job_exists.return_value = True
 
         job_id = uuid.uuid4()
@@ -362,170 +363,431 @@ class OrchestratorTest(unittest.TestCase):
         postgresql_if.set_job_submitted.assert_not_called()
         postgresql_if.put_new_job.assert_not_called()
 
-
-class PostgresJobManagerTest(unittest.TestCase):
-    def test__job_row_is_stale_on_registered_at__returns_true(self) -> None:
+    def test__task_progress_update__first_progress_update(self) -> None:
         # Arrange
-        cur_time = datetime.now()
-        job = JobDB()
-        job.registered_at = cur_time - timedelta(seconds=65)
+        job_id = uuid.uuid4()
+        celery_task_id = uuid.uuid4()
+        workflow_type_name = "some-workflow-type"
+        workflow_type = WorkflowType(
+            workflow_type_name=workflow_type_name, workflow_type_description_name="description"
+        )
+        job = Job(id=job_id, workflow_type=workflow_type)
 
-        # Act
-
-        # Assert
-        self.assertTrue(
-            PostgresJobManager.job_row_is_stale(job=job, ref_time=cur_time, job_retention_sec=60)
+        job_db = JobDB(
+            job_id=job_id,
+            celery_id=str(celery_task_id),
+            workflow_type=workflow_type_name,
+            status=JobStatusDB.SUBMITTED,
+            registered_at=datetime.datetime.fromisoformat("2024-08-29T14:00:00"),
+            submitted_at=datetime.datetime.fromisoformat("2024-08-29T14:00:01"),
+            timeout_after_ms=10_000,
+        )
+        task_progress_update = TaskProgressUpdate(
+            job_id=str(job_id),
+            celery_task_id=str(celery_task_id),
+            celery_task_type=workflow_type_name,
+            progress=0.0,
+            message="Task has started. Some message here.",
         )
 
-    def test__job_row_is_stale_on_registered_at__returns_false(self) -> None:
-        # Arrange
-        cur_time = datetime.now()
-        job = JobDB()
-        job.registered_at = cur_time - timedelta(seconds=55)
+        mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
+        orchestrator = mocked_orchestrator.orchestrator
 
-        # Act
+        workflow_manager = mocked_orchestrator.workflow_manager
+        workflow_manager.get_workflow_by_name.return_value = workflow_type
 
-        # Assert
-        self.assertFalse(
-            PostgresJobManager.job_row_is_stale(job=job, ref_time=cur_time, job_retention_sec=60)
+        postgresql_if = mocked_orchestrator.postgresql_if
+        postgresql_if.get_job.return_value = job_db
+        postgresql_if.count_job_starts.return_value = 0
+
+        omotes_sdk_if = mocked_orchestrator.omotes_orchestrator_sdk_if
+
+        life_cycle_barrier_manager_obj_mock = (
+            mocked_orchestrator.life_cycle_barrier_manager_obj_mock
         )
 
-    def test__job_row_is_stale_on_submitted_at__returns_true(self) -> None:
-        # Arrange
-        cur_time = datetime.now()
-        job = JobDB()
-        job.registered_at = cur_time - timedelta(seconds=65)
-        job.submitted_at = cur_time - timedelta(seconds=64)
-
         # Act
+        orchestrator.task_progress_update(task_progress_update)
 
         # Assert
-        self.assertTrue(
-            PostgresJobManager.job_row_is_stale(job=job, ref_time=cur_time, job_retention_sec=60)
+        workflow_manager.get_workflow_by_name.assert_called_once_with(workflow_type_name)
+        postgresql_if.get_job.assert_called_once_with(job_id)
+        postgresql_if.count_job_starts.assert_called_once_with(job_id)
+        postgresql_if.set_job_running.assert_called_once_with(job_id)
+        omotes_sdk_if.send_job_status_update.assert_called_once_with(
+            job=job,
+            status_update=JobStatusUpdate(
+                uuid=str(job_id), status=JobStatusUpdate.JobStatus.RUNNING
+            ),
+        )
+        omotes_sdk_if.send_job_progress_update.assert_called_once_with(
+            job,
+            JobProgressUpdate(
+                uuid=str(job.id),
+                progress=task_progress_update.progress,
+                message=task_progress_update.message,
+            ),
         )
 
-    def test__job_row_is_stale_on_submitted_at__returns_false(self) -> None:
+        life_cycle_barrier_manager_obj_mock.wait_for_barrier.assert_not_called()
+
+    def test__task_progress_update__first_progress_update_before_db_update(self) -> None:
         # Arrange
-        cur_time = datetime.now()
-        job = JobDB()
-        job.registered_at = cur_time - timedelta(seconds=65)
-        job.submitted_at = cur_time - timedelta(seconds=55)
+        job_id = uuid.uuid4()
+        celery_task_id = uuid.uuid4()
+        workflow_type_name = "some-workflow-type"
+        workflow_type = WorkflowType(
+            workflow_type_name=workflow_type_name, workflow_type_description_name="description"
+        )
+        job = Job(id=job_id, workflow_type=workflow_type)
 
-        # Act
-
-        # Assert
-        self.assertFalse(
-            PostgresJobManager.job_row_is_stale(job=job, ref_time=cur_time, job_retention_sec=60)
+        job_db_1 = JobDB(
+            job_id=job_id,
+            celery_id=str(celery_task_id),
+            workflow_type=workflow_type_name,
+            status=JobStatusDB.REGISTERED,
+            registered_at=datetime.datetime.fromisoformat("2024-08-29T14:00:00"),
+            timeout_after_ms=10_000,
+        )
+        job_db_2 = JobDB(
+            job_id=job_id,
+            celery_id=str(celery_task_id),
+            workflow_type=workflow_type_name,
+            status=JobStatusDB.SUBMITTED,
+            registered_at=datetime.datetime.fromisoformat("2024-08-29T14:00:00"),
+            submitted_at=datetime.datetime.fromisoformat("2024-08-29T14:00:01"),
+            timeout_after_ms=10_000,
+        )
+        task_progress_update = TaskProgressUpdate(
+            job_id=str(job_id),
+            celery_task_id=str(celery_task_id),
+            celery_task_type=workflow_type_name,
+            progress=0.0,
+            message="Task has started. Some message here.",
         )
 
-    def test__job_row_is_stale_on_running_at__returns_true(self) -> None:
-        # Arrange
-        cur_time = datetime.now()
-        job = JobDB()
-        job.registered_at = cur_time - timedelta(seconds=65)
-        job.submitted_at = cur_time - timedelta(seconds=64)
-        job.running_at = cur_time - timedelta(seconds=63)
+        mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
+        orchestrator = mocked_orchestrator.orchestrator
 
-        # Act
+        workflow_manager = mocked_orchestrator.workflow_manager
+        workflow_manager.get_workflow_by_name.return_value = workflow_type
 
-        # Assert
-        self.assertTrue(
-            PostgresJobManager.job_row_is_stale(job=job, ref_time=cur_time, job_retention_sec=60)
+        postgresql_if = mocked_orchestrator.postgresql_if
+        postgresql_if.get_job.side_effect = [job_db_1, job_db_2]
+        postgresql_if.count_job_starts.return_value = 0
+
+        omotes_sdk_if = mocked_orchestrator.omotes_orchestrator_sdk_if
+
+        life_cycle_barrier_manager_obj_mock = (
+            mocked_orchestrator.life_cycle_barrier_manager_obj_mock
         )
 
-    def test__job_row_is_stale_on_running_at__returns_false(self) -> None:
-        # Arrange
-        cur_time = datetime.now()
-        job = JobDB()
-        job.registered_at = cur_time - timedelta(seconds=65)
-        job.submitted_at = cur_time - timedelta(seconds=64)
-        job.running_at = cur_time - timedelta(seconds=55)
-
         # Act
+        orchestrator.task_progress_update(task_progress_update)
 
         # Assert
-        self.assertFalse(
-            PostgresJobManager.job_row_is_stale(job=job, ref_time=cur_time, job_retention_sec=60)
+        workflow_manager.get_workflow_by_name.assert_called_once_with(workflow_type_name)
+        postgresql_if.get_job.assert_has_calls(
+            [unittest.mock.call(job_id), unittest.mock.call(job_id)]
+        )
+        life_cycle_barrier_manager_obj_mock.wait_for_barrier.assert_called_with(job_id)
+        postgresql_if.count_job_starts.assert_called_once_with(job_id)
+        postgresql_if.set_job_running.assert_called_once_with(job_id)
+        omotes_sdk_if.send_job_status_update.assert_called_once_with(
+            job=job,
+            status_update=JobStatusUpdate(
+                uuid=str(job_id), status=JobStatusUpdate.JobStatus.RUNNING
+            ),
+        )
+        omotes_sdk_if.send_job_progress_update.assert_called_once_with(
+            job,
+            JobProgressUpdate(
+                uuid=str(job.id),
+                progress=task_progress_update.progress,
+                message=task_progress_update.message,
+            ),
         )
 
-
-class TimeoutJobManagerTest(unittest.TestCase):
-    def test__job_is_timed_out__returns_false_on_status_registered(self) -> None:
+    def test__task_progress_update__repeated_first_progress_update_over_threshold(self) -> None:
         # Arrange
-        job = JobDB()
-        # Arrange the case where the job should be considered as timed out,
-        # but job_is_timedout() returns false due to job.status != RUNNING
-        job.running_at = datetime.now() - timedelta(milliseconds=100)
-        job.timeout_after_ms = 0
-        job.status = JobStatus.REGISTERED
+        job_id = uuid.uuid4()
+        celery_task_id = uuid.uuid4()
+        workflow_type_name = "some-workflow-type"
+        workflow_type = WorkflowType(
+            workflow_type_name=workflow_type_name, workflow_type_description_name="description"
+        )
+        job = Job(id=job_id, workflow_type=workflow_type)
+
+        job_db = JobDB(
+            job_id=job_id,
+            celery_id=str(celery_task_id),
+            workflow_type=workflow_type_name,
+            status=JobStatusDB.SUBMITTED,
+            registered_at=datetime.datetime.fromisoformat("2024-08-29T14:00:00"),
+            submitted_at=datetime.datetime.fromisoformat("2024-08-29T14:00:01"),
+            timeout_after_ms=10_000,
+        )
+        task_progress_update = TaskProgressUpdate(
+            job_id=str(job_id),
+            celery_task_id=str(celery_task_id),
+            celery_task_type=workflow_type_name,
+            progress=0.0,
+            message="Task has started. Some message here.",
+        )
+
+        mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
+        orchestrator = mocked_orchestrator.orchestrator
+
+        workflow_manager = mocked_orchestrator.workflow_manager
+        workflow_manager.get_workflow_by_name.return_value = workflow_type
+
+        postgresql_if = mocked_orchestrator.postgresql_if
+        postgresql_if.get_job.return_value = job_db
+        postgresql_if.count_job_starts.return_value = 1
+
+        omotes_sdk_if = mocked_orchestrator.omotes_orchestrator_sdk_if
+
+        life_cycle_barrier_manager_obj_mock = (
+            mocked_orchestrator.life_cycle_barrier_manager_obj_mock
+        )
+
+        celery_if = mocked_orchestrator.celery_if
 
         # Act
+        orchestrator.task_progress_update(task_progress_update)
 
         # Assert
-        self.assertFalse(TimeoutJobManager.job_is_timedout(job))
+        workflow_manager.get_workflow_by_name.assert_called_once_with(workflow_type_name)
+        postgresql_if.get_job.assert_called_once_with(job_id)
+        postgresql_if.count_job_starts.assert_called_once_with(job_id)
+        celery_if.cancel_workflow.assert_called_once_with(str(celery_task_id))
+        omotes_sdk_if.send_job_status_update.assert_called_once_with(
+            job=job,
+            status_update=JobStatusUpdate(
+                uuid=str(job_id), status=JobStatusUpdate.JobStatus.CANCELLED
+            ),
+        )
+        omotes_sdk_if.send_job_result.assert_called_once_with(
+            job=job,
+            result=JobResult(
+                uuid=str(job.id),
+                result_type=JobResult.ResultType.ERROR,
+                output_esdl=None,
+                logs="Job cannot be processed due to being retried the maximum number of times.",
+            ),
+        )
+        postgresql_if.delete_job.assert_called_once_with(job_id)
+        life_cycle_barrier_manager_obj_mock.cleanup_barrier(job_id)
 
-    def test__job_is_timed_out__returns_false_on_status_submitted(self) -> None:
+        life_cycle_barrier_manager_obj_mock.wait_for_barrier.assert_not_called()
+        postgresql_if.set_job_running.assert_not_called()
+
+    def test__task_progress_update__not_first_progress_update(self) -> None:
         # Arrange
-        job = JobDB()
-        # Arrange the case where the job should be considered as timed out,
-        # but job_is_timedout() returns false due to job.status != RUNNING
-        job.running_at = datetime.now() - timedelta(milliseconds=100)
-        job.timeout_after_ms = 0
-        job.status = JobStatus.SUBMITTED
+        job_id = uuid.uuid4()
+        celery_task_id = uuid.uuid4()
+        workflow_type_name = "some-workflow-type"
+        workflow_type = WorkflowType(
+            workflow_type_name=workflow_type_name, workflow_type_description_name="description"
+        )
+        job = Job(id=job_id, workflow_type=workflow_type)
+
+        job_db = JobDB(
+            job_id=job_id,
+            celery_id=str(celery_task_id),
+            workflow_type=workflow_type_name,
+            status=JobStatusDB.RUNNING,
+            registered_at=datetime.datetime.fromisoformat("2024-08-29T14:00:00"),
+            submitted_at=datetime.datetime.fromisoformat("2024-08-29T14:00:01"),
+            running_at=datetime.datetime.fromisoformat("2024-08-29T14:00:02"),
+            timeout_after_ms=10_000,
+        )
+        task_progress_update = TaskProgressUpdate(
+            job_id=str(job_id),
+            celery_task_id=str(celery_task_id),
+            celery_task_type=workflow_type_name,
+            progress=0.1,
+            message="Task is sort of progressing.",
+        )
+
+        mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
+        orchestrator = mocked_orchestrator.orchestrator
+
+        workflow_manager = mocked_orchestrator.workflow_manager
+        workflow_manager.get_workflow_by_name.return_value = workflow_type
+
+        postgresql_if = mocked_orchestrator.postgresql_if
+        postgresql_if.get_job.return_value = job_db
+
+        omotes_sdk_if = mocked_orchestrator.omotes_orchestrator_sdk_if
+
+        life_cycle_barrier_manager_obj_mock = (
+            mocked_orchestrator.life_cycle_barrier_manager_obj_mock
+        )
 
         # Act
+        orchestrator.task_progress_update(task_progress_update)
 
         # Assert
-        self.assertFalse(TimeoutJobManager.job_is_timedout(job))
+        workflow_manager.get_workflow_by_name.assert_called_once_with(workflow_type_name)
+        postgresql_if.get_job.assert_called_once_with(job_id)
 
-    def test__job_is_timed_out__returns_false_on_status_running(self) -> None:
+        omotes_sdk_if.send_job_progress_update.assert_called_once_with(
+            job,
+            JobProgressUpdate(
+                uuid=str(job.id),
+                progress=task_progress_update.progress,
+                message=task_progress_update.message,
+            ),
+        )
+
+        life_cycle_barrier_manager_obj_mock.wait_for_barrier.assert_not_called()
+        postgresql_if.set_job_running.assert_not_called()
+        postgresql_if.count_job_starts.assert_not_called()
+        omotes_sdk_if.send_job_status_update.assert_not_called()
+
+    def test__task_progress_update__unknown_workflow(self) -> None:
         # Arrange
-        job = JobDB()
-        # Arrange the case where the job is not timed out yet
-        job.running_at = datetime.now() - timedelta(milliseconds=100)
-        job.timeout_after_ms = 10000
-        job.status = JobStatus.RUNNING
+        job_id = uuid.uuid4()
+        celery_task_id = uuid.uuid4()
+        workflow_type_name = "some-workflow-type"
+
+        task_progress_update = TaskProgressUpdate(
+            job_id=str(job_id),
+            celery_task_id=str(celery_task_id),
+            celery_task_type=workflow_type_name,
+            progress=0.1,
+            message="Task is sort of progressing.",
+        )
+
+        mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
+        orchestrator = mocked_orchestrator.orchestrator
+
+        workflow_manager = mocked_orchestrator.workflow_manager
+        workflow_manager.get_workflow_by_name.return_value = None
+
+        postgresql_if = mocked_orchestrator.postgresql_if
+
+        omotes_sdk_if = mocked_orchestrator.omotes_orchestrator_sdk_if
+
+        life_cycle_barrier_manager_obj_mock = (
+            mocked_orchestrator.life_cycle_barrier_manager_obj_mock
+        )
 
         # Act
+        orchestrator.task_progress_update(task_progress_update)
 
         # Assert
-        self.assertFalse(TimeoutJobManager.job_is_timedout(job))
+        workflow_manager.get_workflow_by_name.assert_called_once_with(workflow_type_name)
 
-    def test__job_is_timed_out__returns_true_on_status_running(self) -> None:
+        postgresql_if.get_job.assert_not_called()
+        postgresql_if.set_job_running.assert_not_called()
+        postgresql_if.count_job_starts.assert_not_called()
+        omotes_sdk_if.send_job_progress_update.assert_not_called()
+        omotes_sdk_if.send_job_status_update.assert_not_called()
+        life_cycle_barrier_manager_obj_mock.wait_for_barrier.assert_not_called()
+
+    def test__task_progress_update__unknown_job(self) -> None:
         # Arrange
-        job = JobDB()
-        # Arrange the case where the job should be considered as timed out
-        job.running_at = datetime.now() - timedelta(milliseconds=100)
-        job.timeout_after_ms = 0
-        job.status = JobStatus.RUNNING
+        job_id = uuid.uuid4()
+        celery_task_id = uuid.uuid4()
+        workflow_type_name = "some-workflow-type"
+        workflow_type = WorkflowType(
+            workflow_type_name=workflow_type_name, workflow_type_description_name="description"
+        )
+        task_progress_update = TaskProgressUpdate(
+            job_id=str(job_id),
+            celery_task_id=str(celery_task_id),
+            celery_task_type=workflow_type_name,
+            progress=0.0,
+            message="Task has started. Some message here.",
+        )
+
+        mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
+        orchestrator = mocked_orchestrator.orchestrator
+
+        workflow_manager = mocked_orchestrator.workflow_manager
+        workflow_manager.get_workflow_by_name.return_value = workflow_type
+
+        postgresql_if = mocked_orchestrator.postgresql_if
+        postgresql_if.get_job.return_value = None
+
+        omotes_sdk_if = mocked_orchestrator.omotes_orchestrator_sdk_if
+
+        life_cycle_barrier_manager_obj_mock = (
+            mocked_orchestrator.life_cycle_barrier_manager_obj_mock
+        )
+
+        celery_if = mocked_orchestrator.celery_if
 
         # Act
+        orchestrator.task_progress_update(task_progress_update)
 
         # Assert
-        self.assertTrue(TimeoutJobManager.job_is_timedout(job))
+        workflow_manager.get_workflow_by_name.assert_called_once_with(workflow_type_name)
+        postgresql_if.get_job.assert_called_once_with(job_id)
+        celery_if.cancel_workflow.assert_called_once_with(str(celery_task_id))
 
-    def test__job_is_timed_out__returns_false_on_timeout_not_set(self) -> None:
+        postgresql_if.count_job_starts.assert_not_called()
+        postgresql_if.set_job_running.assert_not_called()
+        omotes_sdk_if.send_job_status_update.assert_not_called()
+        omotes_sdk_if.send_job_progress_update.assert_not_called()
+        life_cycle_barrier_manager_obj_mock.wait_for_barrier.assert_not_called()
+
+    def test__task_progress_update__wrong_celery_task(self) -> None:
         # Arrange
-        job = JobDB()
-        # Arrange the case where the job should be considered as timed out,
-        # but the check is skipped by job_is_timedout()
-        # because job.timeout_after_ms is not specified.
-        job.running_at = datetime.now() - timedelta(milliseconds=100)
-        job.timeout_after_ms = None
-        job.status = JobStatus.RUNNING
+        job_id = uuid.uuid4()
+        celery_task_id_progress_update = "celery-id-wrong"
+        celery_task_id_db = "celery-id"
+        workflow_type_name = "some-workflow-type"
+        workflow_type = WorkflowType(
+            workflow_type_name=workflow_type_name, workflow_type_description_name="description"
+        )
+
+        job_db = JobDB(
+            job_id=job_id,
+            celery_id=celery_task_id_db,
+            workflow_type=workflow_type_name,
+            status=JobStatusDB.SUBMITTED,
+            registered_at=datetime.datetime.fromisoformat("2024-08-29T14:00:00"),
+            submitted_at=datetime.datetime.fromisoformat("2024-08-29T14:00:01"),
+            timeout_after_ms=10_000,
+        )
+        task_progress_update = TaskProgressUpdate(
+            job_id=str(job_id),
+            celery_task_id=celery_task_id_progress_update,
+            celery_task_type=workflow_type_name,
+            progress=0.0,
+            message="Task has started. Some message here.",
+        )
+
+        mocked_orchestrator = OrchestratorTest.MockedOrchestrator()
+        orchestrator = mocked_orchestrator.orchestrator
+
+        workflow_manager = mocked_orchestrator.workflow_manager
+        workflow_manager.get_workflow_by_name.return_value = workflow_type
+
+        postgresql_if = mocked_orchestrator.postgresql_if
+        postgresql_if.get_job.return_value = job_db
+        postgresql_if.count_job_starts.return_value = 0
+
+        omotes_sdk_if = mocked_orchestrator.omotes_orchestrator_sdk_if
+
+        life_cycle_barrier_manager_obj_mock = (
+            mocked_orchestrator.life_cycle_barrier_manager_obj_mock
+        )
+        celery_if = mocked_orchestrator.celery_if
 
         # Act
+        orchestrator.task_progress_update(task_progress_update)
 
         # Assert
-        self.assertFalse(TimeoutJobManager.job_is_timedout(job))
+        workflow_manager.get_workflow_by_name.assert_called_once_with(workflow_type_name)
+        postgresql_if.get_job.assert_called_once_with(job_id)
+        celery_if.cancel_workflow.assert_called_once_with(celery_task_id_progress_update)
 
-
-class MyTest(unittest.TestCase):
-    def test__construct_orchestrator_config__no_exception(self) -> None:
-        # Arrange
-
-        # Act
-        result = OrchestratorConfig()
-
-        # Assert
-        self.assertIsNotNone(result)
+        postgresql_if.count_job_starts.assert_not_called()
+        postgresql_if.set_job_running.assert_not_called()
+        omotes_sdk_if.send_job_status_update.assert_not_called()
+        omotes_sdk_if.send_job_progress_update.assert_not_called()
+        life_cycle_barrier_manager_obj_mock.wait_for_barrier.assert_not_called()

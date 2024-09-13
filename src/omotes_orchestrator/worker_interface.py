@@ -2,13 +2,13 @@ import logging
 from dataclasses import dataclass
 from typing import Callable
 
-from omotes_sdk.config import RabbitMQConfig
 from omotes_sdk.internal.common.broker_interface import BrokerInterface, AMQPQueueType
 from omotes_sdk.internal.orchestrator_worker_events.messages.task_pb2 import (
     TaskResult,
     TaskProgressUpdate,
 )
 
+from omotes_orchestrator.config import OrchestratorConfig
 
 logger = logging.getLogger("omotes_orchestrator")
 
@@ -66,17 +66,19 @@ class TaskProgressUpdateHandler:
 class WorkerInterface:
     """Connect to the Celery app which orchestrates the workers."""
 
+    config: OrchestratorConfig
+    """Configuration for Orchestrator application."""
     worker_broker_if: BrokerInterface
     """Interface to RabbitMQ, Celery side for events and results send by workers outside of
     Celery."""
 
-    def __init__(self, rabbitmq_worker_events: RabbitMQConfig) -> None:
+    def __init__(self, config: OrchestratorConfig) -> None:
         """Create the interface to Celery.
 
-        :param rabbitmq_worker_events: Configuration for connecting to workers through broker at
-            Celery-side.
+        :param config: Configuration for Orchestrator application.
         """
-        self.worker_broker_if = BrokerInterface(rabbitmq_worker_events)
+        self.config = config
+        self.worker_broker_if = BrokerInterface(config.rabbitmq_worker_events)
 
     def start(self) -> None:
         """Start the Celery app."""
@@ -95,7 +97,7 @@ class WorkerInterface:
         """
         callback_handler = TaskResultHandler(callback_on_worker_task_result)
         self.worker_broker_if.declare_queue_and_add_subscription(
-            queue_name="omotes_task_result_events",
+            queue_name=self.config.task_result_queue_name,
             callback_on_message=callback_handler.callback_on_worker_task_result_wrapped,
             queue_type=AMQPQueueType.DURABLE,
         )
@@ -110,7 +112,7 @@ class WorkerInterface:
         """
         callback_handler = TaskProgressUpdateHandler(callback_on_worker_task_progress_update)
         self.worker_broker_if.declare_queue_and_add_subscription(
-            queue_name="omotes_task_progress_events",
+            queue_name=self.config.task_progress_queue_name,
             callback_on_message=callback_handler.callback_on_worker_task_result_wrapped,
             queue_type=AMQPQueueType.DURABLE,
         )
