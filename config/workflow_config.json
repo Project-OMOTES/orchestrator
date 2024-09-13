@@ -17,49 +17,21 @@
   },
   {
     "workflow_type_name": "simulator",
-    "workflow_type_description_name": "High fidelity simulator"
-  },
-  {
-    "workflow_type_name": "test_worker",
-    "workflow_type_description_name": "Used for testing purposes. Should not be used in production environments.",
+    "workflow_type_description_name": "High fidelity simulator",
     "workflow_parameters": [
+      {
+        "parameter_type": "duration",
+        "key_name": "timestep",
+        "description": "Duration of a timestep in seconds.",
+        "minimum": 0
+      },
       {
         "parameter_type": "datetime",
         "key_name": "start_time"
       },
       {
         "parameter_type": "datetime",
-        "key_name": "end_time",
-        "default": "2023-12-31T20:00:00"
-      },
-      {
-        "parameter_type": "integer",
-        "key_name": "step_size_in_minutes",
-        "title": "This will override the 'capitalized, underscore to space', key_name",
-        "description": "Description/explanation.",
-        "default": 900,
-        "minimum": 1,
-        "maximum": 525600
-      },
-      {
-        "parameter_type": "integer",
-        "key_name": "number_of_steps",
-        "minimum": 2
-      },
-      {
-        "parameter_type": "string",
-        "key_name": "test_enum",
-        "description": "How to use enum options",
-        "enum_options": [
-          {
-            "key_name": "key1",
-            "display_name": "Display name 1"
-          },
-          {
-            "key_name": "key2",
-            "display_name": "Display name 2"
-          }
-        ]
+        "key_name": "end_time"
       }
     ]
   }

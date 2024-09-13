@@ -44,9 +44,9 @@ markupsafe==2.1.5
     # via mako
 multidict==6.0.5
     # via yarl
-omotes-sdk-protocol==0.1.4
+omotes-sdk-protocol==0.1.5
     # via omotes-sdk-python
-omotes-sdk-python==3.1.0
+omotes-sdk-python==3.1.2
     # via orchestrator (pyproject.toml)
 pamqp==3.3.0
     # via
