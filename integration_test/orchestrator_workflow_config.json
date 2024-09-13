@@ -1,0 +1,15 @@
+[
+  {
+    "workflow_type_name": "test_worker_hard_crash",
+    "workflow_type_description_name": "Used for testing purposes. Should not be used in production environments."
+  },
+  {
+    "workflow_type_name": "test_worker",
+    "workflow_type_description_name": "Used for testing purposes. Should not be used in production environments."
+  }
+  ,
+  {
+    "workflow_type_name": "test_worker_long_sleep",
+    "workflow_type_description_name": "Used for testing purposes. Should not be used in production environments."
+  }
+]

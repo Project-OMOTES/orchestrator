@@ -71,7 +71,8 @@ class TimeoutJobManagerConfig:
         :param prefix: Prefix to the name environment variables.
         """
         self.start_buffer_sec = int(
-            os.environ.get(f"{prefix}TIMEOUT_JOB_MANAGER_START_BUFFER_SEC", "60"))
+            os.environ.get(f"{prefix}TIMEOUT_JOB_MANAGER_START_BUFFER_SEC", "60")
+        )
         self.rerun_sec = int(os.environ.get(f"{prefix}TIMEOUT_JOB_HANDLER_RERUN_SEC", "30"))
 
 
@@ -99,6 +100,9 @@ class OrchestratorConfig:
     """Name of the queue on RabbitMQ on the Celery side, used for events from tasks."""
     log_level: str
     """Log level for orchestrator."""
+    delivery_limit_threshold_per_job: int
+    """The amount of times a job may be executed before deemed to be unprocessable. A job would be
+    repeated due to a hard crash e.g. OOM."""
 
     def __init__(self) -> None:
         """Construct the orchestrator configuration using environment variables."""
@@ -116,3 +120,6 @@ class OrchestratorConfig:
             "TASK_PROGRESS_QUEUE_NAME", "omotes_task_progress_events"
         )
         self.log_level = os.environ.get("LOG_LEVEL", "INFO")
+        self.delivery_limit_threshold_per_job = int(
+            os.environ.get("DELIVERY_LIMIT_THRESHOLD_PER_JOB", "1")
+        )
