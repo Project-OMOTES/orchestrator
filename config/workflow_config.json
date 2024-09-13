@@ -21,7 +21,8 @@
     "workflow_parameters": [
       {
         "parameter_type": "duration",
-        "key_name": "timestep"
+        "key_name": "timestep",
+        "description": "Duration of a timestep in milliseconds."
       },
       {
         "parameter_type": "datetime",
