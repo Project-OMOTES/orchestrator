@@ -327,10 +327,15 @@ class Orchestrator:
             submit = True
 
         if submit:
+            job_reference = None
+            if job_submission.HasField("job_reference"):
+                job_reference = job_submission.job_reference
+
             self._init_barriers.ensure_barrier(submitted_job_id)
             celery_task_id = self.celery_if.start_workflow(
                 job.workflow_type,
                 job.id,
+                job_reference,
                 job_submission.esdl,
                 json_format.MessageToDict(job_submission.params_dict),
             )
