@@ -106,7 +106,7 @@ revision may be generated using `alembic` by running:
 ./ci/linux/db_models_generate_new_revision.sh "revision message"
 ```
 
-All database revisions will be automatically applied when omotes-rest is started.
+All database revisions will be automatically applied when the orchestrator is started.
 
 ## Direct Alembic control
 
