@@ -40,8 +40,6 @@ extension `.sh).
 
 - `create_venv`: Creates a local virtual environment (`.venv/`) in which all dependencies may be
   installed.
-- `db_models_apply_schema`: Will apply all available SQL db schema revisions to the local SQL
-  database.
 - `db_models_generate_new_revision`: Can be used to generate a new revision of the SQL db schema.
   Expects 1 argument
   e.g. `ci/linux/db_models_generate_new_revision.sh "this is the revision message`.
@@ -103,21 +101,12 @@ This will update the reference to point to the correct submodule commit.
 
 First set up the development environment with `create_venv` and `install_dependencies`. Then you
 can make the necessary changes to `omotes_orchestrator/db_models/`. Finally, a new SQL schema
-revision may be generated using `alembic` by running `db_models_generate_new_revision`. In order to
-apply
-all database revisions you can run `db_models_apply_schema`.
-
-Do not forget to actually start the PostgreSQL database locally!
-This may be done with:
-
+revision may be generated using `alembic` by running:
 ```bash
-cd computation-engine-at-orchestrator/
-cp .env-template .env
-./scripts/setup.sh
-./scripts/start_postgres_in_dev_mode.sh  # This will start PostgreSQL with port 5432 opened on localhost 
-cd ../
-./ci/linux/db_models_apply_schema.sh # Setup will not apply the current schema but only create the SQL database.
+./ci/linux/db_models_generate_new_revision.sh "revision message"
 ```
+
+All database revisions will be automatically applied when omotes-rest is started.
 
 ## Direct Alembic control
 
