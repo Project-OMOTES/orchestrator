@@ -1,5 +1,6 @@
 import logging
 import uuid
+from typing import Optional
 
 from celery import Celery
 from celery.result import AsyncResult
@@ -41,20 +42,26 @@ class CeleryInterface:
         self.app.close()
 
     def start_workflow(
-        self, workflow_type: WorkflowType, job_id: uuid.UUID, input_esdl: str, params_dict: dict
+        self,
+        workflow_type: WorkflowType,
+        job_id: uuid.UUID,
+        job_reference: Optional[str],
+        input_esdl: str,
+        params_dict: dict,
     ) -> str:
         """Start a new workflow.
 
         :param workflow_type: Type of workflow to start. Currently, this translates directly to
             a Celery task with the same name.
         :param job_id: The OMOTES ID of the job.
+        :param job_reference: The reference to the job supplied by the user.
         :param input_esdl: The ESDL to perform the task on.
         :param params_dict: The additional, non-ESDL, job parameters.
         :return: Celery task id.
         """
         started_task: AsyncResult = self.app.signature(
             workflow_type.workflow_type_name,
-            (job_id, input_esdl, params_dict),
+            (job_id, job_reference, input_esdl, params_dict),
             queue=workflow_type.workflow_type_name,
         ).delay()
         LOGGER.debug(

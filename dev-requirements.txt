@@ -71,6 +71,10 @@ flake8-pyproject==1.2.3
     # via orchestrator (pyproject.toml)
 flake8-quotes==3.3.2
     # via orchestrator (pyproject.toml)
+future-fstrings==1.2.0
+    # via
+    #   -c requirements.txt
+    #   pyecore
 greenlet==3.0.1
     # via
     #   -c requirements.txt
@@ -85,6 +89,10 @@ kombu==5.3.4
     # via
     #   -c requirements.txt
     #   celery
+lxml==5.3.0
+    # via
+    #   -c requirements.txt
+    #   pyecore
 mako==1.3.2
     # via
     #   -c requirements.txt
@@ -107,14 +115,18 @@ mypy-extensions==1.0.0
     # via
     #   black
     #   mypy
-omotes-sdk-protocol==0.1.5
+omotes-sdk-protocol==0.1.6
     # via
     #   -c requirements.txt
     #   omotes-sdk-python
-omotes-sdk-python==3.1.2
+omotes-sdk-python==3.2.2
     # via
     #   -c requirements.txt
     #   orchestrator (pyproject.toml)
+ordered-set==4.1.0
+    # via
+    #   -c requirements.txt
+    #   pyecore
 packaging==23.2
     # via
     #   build
@@ -147,6 +159,14 @@ pycodestyle==2.10.0
     # via flake8
 pydocstyle==6.3.0
     # via flake8-docstrings
+pyecore==0.12.1
+    # via
+    #   -c requirements.txt
+    #   pyesdl
+pyesdl==24.9.0
+    # via
+    #   -c requirements.txt
+    #   omotes-sdk-python
 pyflakes==3.0.1
     # via flake8
 pyproject-hooks==1.0.0
@@ -165,6 +185,10 @@ python-dotenv==1.0.0
     # via
     #   -c requirements.txt
     #   orchestrator (pyproject.toml)
+restrictedpython==7.4
+    # via
+    #   -c requirements.txt
+    #   pyecore
 setuptools-git-versioning==1.13.5
     # via orchestrator (pyproject.toml)
 six==1.16.0

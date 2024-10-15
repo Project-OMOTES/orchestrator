@@ -276,8 +276,10 @@ class Orchestrator:
         job_uuid = uuid.UUID(job_submission.uuid)
         if workflow_type is None:
             logger.warning(
-                "Received a new job (id %s) with unknown workflow type %s. Ignoring job.",
+                "Received a new job (id %s, reference %s) with unknown workflow type %s. "
+                "Ignoring job.",
                 job_submission.uuid,
+                job_submission.job_reference,
                 job_submission.workflow_type,
             )
             self.omotes_sdk_if.send_job_result_by_job_id(
@@ -295,7 +297,10 @@ class Orchestrator:
         job = Job(job_uuid, workflow_type)
 
         logger.info(
-            "Received new job %s for workflow type %s", job.id, job_submission.workflow_type
+            "Received new job %s with reference %s for workflow type %s",
+            job.id,
+            job_submission.job_reference,
+            job_submission.workflow_type,
         )
         submitted_job_id = uuid.UUID(job_submission.uuid)
 
@@ -309,7 +314,7 @@ class Orchestrator:
                 "New job %s was already registered previously. Will be submitted %s", job.id, submit
             )
         else:
-            logger.debug("New job %s was not yet registered. Registering and submitting.")
+            logger.debug("New job %s was not yet registered. Registering and submitting.", job.id)
 
             if not job_submission.HasField("timeout_ms"):
                 timeout_after_ms = None
@@ -327,16 +332,25 @@ class Orchestrator:
             submit = True
 
         if submit:
+            job_reference = None
+            if job_submission.HasField("job_reference"):
+                job_reference = job_submission.job_reference
+
             self._init_barriers.ensure_barrier(submitted_job_id)
             celery_task_id = self.celery_if.start_workflow(
                 job.workflow_type,
                 job.id,
+                job_reference,
                 job_submission.esdl,
                 json_format.MessageToDict(job_submission.params_dict),
             )
 
             self.postgresql_if.set_job_submitted(job.id, celery_task_id)
-            logger.debug("New job %s has been submitted.", job.id)
+            logger.debug(
+                "New job %s with reference %s has been submitted.",
+                job.id,
+                job_submission.job_reference,
+            )
             self._init_barriers.set_barrier(submitted_job_id)
 
     def job_cancellation_handler(self, job_cancellation: JobCancel) -> None:

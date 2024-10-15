@@ -32,22 +32,28 @@ click-repl==0.3.0
     # via celery
 dataclass-binder==0.3.4
     # via orchestrator (pyproject.toml)
+future-fstrings==1.2.0
+    # via pyecore
 greenlet==3.0.1
     # via sqlalchemy
 idna==3.6
     # via yarl
 kombu==5.3.4
     # via celery
+lxml==5.3.0
+    # via pyecore
 mako==1.3.2
     # via alembic
 markupsafe==2.1.5
     # via mako
 multidict==6.0.5
     # via yarl
-omotes-sdk-protocol==0.1.5
+omotes-sdk-protocol==0.1.6
     # via omotes-sdk-python
-omotes-sdk-python==3.1.2
+omotes-sdk-python==3.2.2
     # via orchestrator (pyproject.toml)
+ordered-set==4.1.0
+    # via pyecore
 pamqp==3.3.0
     # via
     #   aiormq
@@ -58,10 +64,16 @@ protobuf==4.25.2
     # via omotes-sdk-protocol
 psycopg2-binary==2.9.9
     # via orchestrator (pyproject.toml)
+pyecore==0.12.1
+    # via pyesdl
+pyesdl==24.9.0
+    # via omotes-sdk-python
 python-dateutil==2.8.2
     # via celery
 python-dotenv==1.0.0
     # via orchestrator (pyproject.toml)
+restrictedpython==7.4
+    # via pyecore
 six==1.16.0
     # via python-dateutil
 sqlalchemy==2.0.28
