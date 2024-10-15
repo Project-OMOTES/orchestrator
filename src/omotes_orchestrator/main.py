@@ -276,7 +276,8 @@ class Orchestrator:
         job_uuid = uuid.UUID(job_submission.uuid)
         if workflow_type is None:
             logger.warning(
-                "Received a new job (id %s, reference %s) with unknown workflow type %s. Ignoring job.",
+                "Received a new job (id %s, reference %s) with unknown workflow type %s. "
+                "Ignoring job.",
                 job_submission.uuid,
                 job_submission.job_reference,
                 job_submission.workflow_type,
