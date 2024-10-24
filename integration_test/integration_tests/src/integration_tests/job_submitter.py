@@ -36,6 +36,20 @@ JOB_COUNT_PER_PROCESS = 100
 PROCESS_COUNT = 5
 TIMEOUT_IN_WHICH_ALL_JOBS_MUST_FINISH_PER_PROCESS_SECONDS = 60.0
 
+DUMMY_ESDL = """<?xml version='1.0' encoding='UTF-8'?>
+<esdl:EnergySystem xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:esdl="http://www.tno.nl/esdl" id="a7889fc1-a6b5-4467-9a0d-b24fa496e0d3" description="" esdlVersion="v2401" name="Dummy ESDL" version="2">
+  <instance xsi:type="esdl:Instance" id="5275d2de-585c-4d26-a518-95588b4e910a" name="Untitled Instance">
+    <area xsi:type="esdl:Area" name="Untitled Area" id="f07f600e-0b0b-4047-81d5-e3e37ed5c2c3">
+      <asset xsi:type="esdl:HeatingDemand" name="HeatingDemand_48e0" id="48e0b6eb-db00-472a-918f-5ec5b70c5b20">
+        <port xsi:type="esdl:InPort" name="In" id="9a346418-9244-4402-9006-766ad5fa8555"/>
+        <port xsi:type="esdl:OutPort" name="Out" id="dab0f764-a112-41c0-bb7d-64c51a10e7db"/>
+        <geometry xsi:type="esdl:Point" lat="52.18338560942813" lon="4.788015455836084" CRS="WGS84"/>
+      </asset>
+    </area>
+  </instance>
+</esdl:EnergySystem>
+"""
+
 
 class JobSubmitter:
     process_number: int
@@ -75,6 +89,9 @@ class JobSubmitter:
                 )
                 self.errors.append(error)
 
+            if result.result_type != JobResult.ResultType.SUCCEEDED:
+                self.errors.append(f"Job {job.id} did not succeed: {result.result_type}")
+
             all_counted = False
             if JOB_COUNT_PER_PROCESS == len(self.result_jobs):
                 LOG.debug("Received the expected amount of result!")
@@ -113,7 +130,7 @@ class JobSubmitter:
 
             for i in range(0, JOB_COUNT_PER_PROCESS):
                 job_ref = omotes_if.submit_job(
-                    esdl="input-esdl-value",
+                    esdl=DUMMY_ESDL,
                     params_dict={
                         "key1": "value1",
                         "key2": ["just", "a", "list", "with", "an", "integer", 3],
