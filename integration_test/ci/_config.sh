@@ -1,15 +1,16 @@
 #!/bin/bash
 
-export CURRENT_WORKDIR=$PWD
-COMPUTATION_ENGINE="../computation-engine-at-orchestrator"
-ENV_FILE="${CURRENT_WORKDIR}/.env.test"
-DOCKER_COMPOSE_FILE="${COMPUTATION_ENGINE}/docker-compose.yml"
-DOCKER_COMPOSE_OVERRIDE_FILE="./docker-compose.override.yml"
+export ORCHESTRATOR_TEST_DIR=$PWD
+export OMOTES_SYSTEM="../omotes-system-at-orchestrator"
+export ORCHESTRATOR_DIR="${ORCHESTRATOR_TEST_DIR}/../"
+export TEST_WORKER_DIR="${ORCHESTRATOR_TEST_DIR}/test_worker/"
+export INTEGRATION_TESTS_DIR="${ORCHESTRATOR_TEST_DIR}/integration_tests/"
+export ENV_FILE="${ORCHESTRATOR_TEST_DIR}/.env.test"
+
+export DOCKER_COMPOSE_SETUP_TEST_OVERRIDE="${OMOTES_SYSTEM}/docker-compose.yml -f ${OMOTES_SYSTEM}/docker-compose.override.setup.yml -f ${ORCHESTRATOR_TEST_DIR}/docker-compose.override.yml"
+export DOCKER_COMPOSE_TEST_OVERRIDE="${OMOTES_SYSTEM}/docker-compose.yml -f ${ORCHESTRATOR_TEST_DIR}/docker-compose.override.yml"
 
 export COMPOSE_PROJECT_NAME=omotes_orchestrator_integration_tests
 
-export ORCHESTRATOR_DIR="${CURRENT_WORKDIR}/../"
-export TEST_WORKER_DIR="${CURRENT_WORKDIR}/test_worker/"
-export INTEGRATION_TESTS_DIR="${CURRENT_WORKDIR}/integration_tests/"
-
-echo "Using docker compose files: ${DOCKER_COMPOSE_FILE} ${DOCKER_COMPOSE_OVERRIDE_FILE}"
+echo "Using docker compose files for setup: ${DOCKER_COMPOSE_SETUP_TEST_OVERRIDE}"
+echo "Using docker compose files for test: ${DOCKER_COMPOSE_TEST_OVERRIDE}"
