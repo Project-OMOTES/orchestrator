@@ -1,3 +1,0 @@
-[submodule "computation_engine"]
-	path = omotes-system-at-orchestrator
-	url = git@github.com:Project-OMOTES/computation-engine.git
