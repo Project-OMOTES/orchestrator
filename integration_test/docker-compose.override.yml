@@ -1,13 +1,9 @@
-networks:
-  omotes:
-    external: true
-
 services:
   orchestrator:
     build: ${ORCHESTRATOR_DIR}
     image: !reset
     volumes:
-      - "${CURRENT_WORKDIR}/orchestrator_workflow_config.json:/config/workflow_config.json"
+      - "${ORCHESTRATOR_TEST_DIR}/orchestrator_workflow_config.json:/config/workflow_config.json"
 
   orchestrator_postgres_db:
     ports:

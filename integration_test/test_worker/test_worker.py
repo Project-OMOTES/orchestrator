@@ -40,7 +40,7 @@ def test_worker_task(
     elif WORKER_TYPE == "LONG_SLEEP":
         time.sleep(100)
     update_progress_handler(0.7, f"After log {WORKER_TYPE}")
-    return f"Hello from test worker {WORKER_TYPE}!"
+    return input_esdl
 
 
 if __name__ == "__main__":

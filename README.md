@@ -11,7 +11,7 @@ The following directory structure is used:
 
 - `ci/`: Contains all CI & other development scripts to help standardize the development workflow
   for both Linux and Windows.
-- `computation-engine-at-orchestrator/`: Submodule link to the latest `computation-engine` release.
+- `omotes-system-at-orchestrator/`: Submodule link to the latest `omotes-system` release.
   Necessary for infrastructure that is necessary during the integration test.
 - `config/`: Contains orchestrator workflow definitions configuration. The `workflow_config.json`
   file will be overwritten by a volume mount when deploying via docker.
@@ -60,25 +60,25 @@ A typical development workflow would be:
 5. run `lint`, `test_unit`, and `typecheck` to check for code quality issues.
 
 One of the example development workflows can be that you need to run and develop the orchestrator
-locally (without docker) while having other computation-engine infrastructure
+locally (without docker) while having other omotes-system infrastructure
 (e.g. postgres, rabbitmq, workers, etc.) started by dockers. The steps could be:
 
-1. comment out the `orchestrator` parts in the `docker-compose.yml` file in the `computation-engine`
+1. comment out the `orchestrator` parts in the `docker-compose.yml` file in the `omotes-system`
    repository.
-2. start computation-engine infrastructure via running `setup` and `start` scripts in
-   the `computation-engine` repository.
+2. start omotes-system infrastructure via running `setup` and `start` scripts in
+   the `omotes-system` repository.
 3. run `run.sh` or `run_windows.sh` in the `orchestrator` repository to develop and interact with
-   computation-engine infrastructure.
+   omotes-system infrastructure.
 
 All these scripts are expected to run from the root of the repository
 
-## Working with computation-engine submodule
+## Working with omotes-system submodule
 
-The [computation-engine](https://github.com/Project-OMOTES/computation-engine/) is available
-as a submodule at `computation-engine-at-orchestrator`. The name of this path is chosen
-to make sure starting the `computation-engine` with `docker compose` uses the
-`computation-engine-at-orchestrator` project name instead of `computation-engine`. If a developer
-is both developing the `orchestrator` and non-submodule `computation-engine` otherwise the
+The [omotes-system](https://github.com/Project-OMOTES/omotes-system) is available
+as a submodule at `omotes-system-at-orchestrator`. The name of this path is chosen
+to make sure starting the `omotes-system` with `docker compose` uses the
+`omotes-system-at-orchestrator` project name instead of `omotes-system`. If a developer
+is both developing the `orchestrator` and non-submodule `omotes-system` otherwise the
 environments may conflict in docker.
 
 To make the submodule available after cloning this repository:
