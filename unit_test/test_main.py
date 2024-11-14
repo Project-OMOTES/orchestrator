@@ -363,7 +363,7 @@ class OrchestratorTest(unittest.TestCase):
         postgresql_if.set_job_submitted.assert_not_called()
         postgresql_if.put_new_job.assert_not_called()
 
-    def test__task_progress_update__first_progress_update(self) -> None:
+    def test__task_progress_update__START_progress_update(self) -> None:
         # Arrange
         job_id = uuid.uuid4()
         celery_task_id = uuid.uuid4()
@@ -386,7 +386,7 @@ class OrchestratorTest(unittest.TestCase):
             job_id=str(job_id),
             celery_task_id=str(celery_task_id),
             celery_task_type=workflow_type_name,
-            progress=0.0,
+            status=TaskProgressUpdate.START,
             message="Task has started. Some message here.",
         )
 
@@ -420,18 +420,10 @@ class OrchestratorTest(unittest.TestCase):
                 uuid=str(job_id), status=JobStatusUpdate.JobStatus.RUNNING
             ),
         )
-        omotes_sdk_if.send_job_progress_update.assert_called_once_with(
-            job,
-            JobProgressUpdate(
-                uuid=str(job.id),
-                progress=task_progress_update.progress,
-                message=task_progress_update.message,
-            ),
-        )
 
         life_cycle_barrier_manager_obj_mock.wait_for_barrier.assert_not_called()
 
-    def test__task_progress_update__first_progress_update_before_db_update(self) -> None:
+    def test__task_progress_update__START_progress_update_before_db_update(self) -> None:
         # Arrange
         job_id = uuid.uuid4()
         celery_task_id = uuid.uuid4()
@@ -462,7 +454,7 @@ class OrchestratorTest(unittest.TestCase):
             job_id=str(job_id),
             celery_task_id=str(celery_task_id),
             celery_task_type=workflow_type_name,
-            progress=0.0,
+            status=TaskProgressUpdate.START,
             message="Task has started. Some message here.",
         )
 
@@ -499,16 +491,8 @@ class OrchestratorTest(unittest.TestCase):
                 uuid=str(job_id), status=JobStatusUpdate.JobStatus.RUNNING
             ),
         )
-        omotes_sdk_if.send_job_progress_update.assert_called_once_with(
-            job,
-            JobProgressUpdate(
-                uuid=str(job.id),
-                progress=task_progress_update.progress,
-                message=task_progress_update.message,
-            ),
-        )
 
-    def test__task_progress_update__repeated_first_progress_update_over_threshold(self) -> None:
+    def test__task_progress_update__repeated_START_progress_update_over_threshold(self) -> None:
         # Arrange
         job_id = uuid.uuid4()
         celery_task_id = uuid.uuid4()
@@ -531,7 +515,7 @@ class OrchestratorTest(unittest.TestCase):
             job_id=str(job_id),
             celery_task_id=str(celery_task_id),
             celery_task_type=workflow_type_name,
-            progress=0.0,
+            status=TaskProgressUpdate.START,
             message="Task has started. Some message here.",
         )
 
@@ -582,7 +566,7 @@ class OrchestratorTest(unittest.TestCase):
         life_cycle_barrier_manager_obj_mock.wait_for_barrier.assert_not_called()
         postgresql_if.set_job_running.assert_not_called()
 
-    def test__task_progress_update__not_first_progress_update(self) -> None:
+    def test__task_progress_update__progress_update(self) -> None:
         # Arrange
         job_id = uuid.uuid4()
         celery_task_id = uuid.uuid4()
@@ -699,7 +683,7 @@ class OrchestratorTest(unittest.TestCase):
             job_id=str(job_id),
             celery_task_id=str(celery_task_id),
             celery_task_type=workflow_type_name,
-            progress=0.0,
+            status=TaskProgressUpdate.START,
             message="Task has started. Some message here.",
         )
 
@@ -757,7 +741,7 @@ class OrchestratorTest(unittest.TestCase):
             job_id=str(job_id),
             celery_task_id=celery_task_id_progress_update,
             celery_task_type=workflow_type_name,
-            progress=0.0,
+            status=TaskProgressUpdate.START,
             message="Task has started. Some message here.",
         )
 
