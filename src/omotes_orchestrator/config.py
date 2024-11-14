@@ -94,6 +94,8 @@ class OrchestratorConfig:
     """Configuration to connect to RabbitMQ on the Celery side, specifically for events send
     outside of Celery."""
 
+    workflow_config: str
+    """Path to the workflow configuration file."""
     task_result_queue_name: str
     """Name of the queue on RabbitMQ on the Celery side, used for results from tasks."""
     task_progress_queue_name: str
@@ -113,6 +115,9 @@ class OrchestratorConfig:
         self.rabbitmq_omotes = EnvRabbitMQConfig("SDK_")
         self.rabbitmq_worker_events = EnvRabbitMQConfig("TASK_")
 
+        self.workflow_config = os.environ.get(
+            "WORKFLOW_CONFIG_PATH", "../config/workflow_config.json"
+        )
         self.task_result_queue_name = os.environ.get(
             "TASK_RESULT_QUEUE_NAME", "omotes_task_result_events"
         )
