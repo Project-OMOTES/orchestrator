@@ -50,7 +50,7 @@ multidict==6.0.5
     # via yarl
 omotes-sdk-protocol==0.1.6
     # via omotes-sdk-python
-omotes-sdk-python==3.2.2
+omotes-sdk-python==3.2.4
     # via orchestrator (pyproject.toml)
 ordered-set==4.1.0
     # via pyecore
