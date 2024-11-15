@@ -51,14 +51,25 @@ class TaskProgressUpdateHandler:
         """
         progress_update = TaskProgressUpdate()
         progress_update.ParseFromString(serialized_message)
-        logger.debug(
-            "Received progress update for job %s (celery task id %s) to progress %s with "
-            "message: %s",
-            progress_update.job_id,
-            progress_update.celery_task_id,
-            progress_update.progress,
-            progress_update.message,
-        )
+
+        if progress_update.HasField("progress"):
+            logger.debug(
+                "Received progress update for job %s (celery task id %s) to progress %s with "
+                "message: %s",
+                progress_update.job_id,
+                progress_update.celery_task_id,
+                progress_update.progress,
+                progress_update.message,
+            )
+        if progress_update.HasField("status"):
+            logger.debug(
+                "Received progress update for job %s (celery task id %s) with status %s with "
+                "message: %s",
+                progress_update.job_id,
+                progress_update.celery_task_id,
+                progress_update.status,
+                progress_update.message,
+            )
 
         self.callback_on_task_progress_update(progress_update)
 

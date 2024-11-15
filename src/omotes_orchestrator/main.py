@@ -554,7 +554,11 @@ class Orchestrator:
                 self.celery_if.cancel_workflow(progress_update.celery_task_id)
                 return
 
-            if progress_update.progress == 0:  # first progress indicating calculation start
+            if (
+                progress_update.HasField("status")
+                and progress_update.status == TaskProgressUpdate.START
+            ):
+                # Progress indicating calculation start
                 logger.debug("Progress update was the first. Setting job %s to RUNNING", job.id)
                 amount_of_starts = self.postgresql_if.count_job_starts(job.id)
                 logger.debug("Job %s has started %s times previously.", job.id, amount_of_starts)
@@ -595,20 +599,21 @@ class Orchestrator:
                         ),
                     )
 
-            logger.debug(
-                "Sending progress update %s (msg: %s) for job %s",
-                progress_update.progress,
-                progress_update.message,
-                job.id,
-            )
-            self.omotes_sdk_if.send_job_progress_update(
-                job,
-                JobProgressUpdate(
-                    uuid=str(job.id),
-                    progress=progress_update.progress,
-                    message=progress_update.message,
-                ),
-            )
+            if progress_update.HasField("progress"):
+                logger.debug(
+                    "Sending progress update %s (msg: %s) for job %s",
+                    progress_update.progress,
+                    progress_update.message,
+                    job.id,
+                )
+                self.omotes_sdk_if.send_job_progress_update(
+                    job,
+                    JobProgressUpdate(
+                        uuid=str(job.id),
+                        progress=progress_update.progress,
+                        message=progress_update.message,
+                    ),
+                )
 
 
 def main() -> None:
@@ -620,9 +625,7 @@ def main() -> None:
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug("Config:\n%s", pprint.pformat(config))
 
-    workflow_type_manager = WorkflowTypeManager.from_json_config_file(
-        "../config/workflow_config.json"
-    )
+    workflow_type_manager = WorkflowTypeManager.from_json_config_file(config.workflow_config)
     orchestrator_if = SDKInterface(config.rabbitmq_omotes, workflow_type_manager)
     celery_if = CeleryInterface(config.celery_config)
     worker_if = WorkerInterface(config)
