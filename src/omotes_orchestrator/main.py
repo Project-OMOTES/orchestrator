@@ -10,10 +10,9 @@ from typing import Any, Union
 
 from omotes_orchestrator.postgres_interface import PostgresInterface
 from omotes_orchestrator.postgres_job_manager import PostgresJobManager
-from omotes_sdk.internal.orchestrator_worker_events.messages.task_pb2 import (
+from omotes_sdk_protocol.internal.task_pb2 import (
     TaskResult,
     TaskProgressUpdate,
-    TaskEsdlMessage,
 )
 from omotes_sdk_protocol.job_pb2 import (
     JobSubmission,
@@ -21,7 +20,6 @@ from omotes_sdk_protocol.job_pb2 import (
     JobStatusUpdate,
     JobProgressUpdate,
     JobCancel,
-    EsdlMessage,
 )
 from omotes_sdk_protocol.workflow_pb2 import RequestAvailableWorkflows
 from omotes_sdk.workflow_type import WorkflowTypeManager
@@ -455,16 +453,6 @@ class Orchestrator:
                 self._init_barriers.wait_for_barrier(job.id)
                 job_db = self.postgresql_if.get_job(job.id)
 
-            esdl_messages_job = [
-                EsdlMessage(
-                    technical_message=esdl_message_task.technical_message,
-                    severity=EsdlMessage.Severity.Value(
-                        TaskEsdlMessage.Severity.Name(esdl_message_task.severity)
-                    ),
-                    esdl_object_id=esdl_message_task.esdl_object_id,
-                )
-                for esdl_message_task in task_result.esdl_messages
-            ]
             # Confirm the job is still relevant.
             if job_db is None:
                 logger.info("Ignoring result as job %s was already cancelled or completed.", job.id)
@@ -489,7 +477,7 @@ class Orchestrator:
                         result_type=JobResult.ResultType.SUCCEEDED,
                         output_esdl=task_result.output_esdl,
                         logs=task_result.logs,
-                        esdl_messages=esdl_messages_job,
+                        esdl_messages=task_result.esdl_messages,
                     ),
                 )
                 self._cleanup_job(job.id)
@@ -506,7 +494,7 @@ class Orchestrator:
                         result_type=JobResult.ResultType.ERROR,
                         output_esdl=task_result.output_esdl,
                         logs=task_result.logs,
-                        esdl_messages=esdl_messages_job,
+                        esdl_messages=task_result.esdl_messages,
                     ),
                 )
                 self._cleanup_job(job.id)

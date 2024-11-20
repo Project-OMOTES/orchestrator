@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from omotes_sdk.internal.common.broker_interface import BrokerInterface, AMQPQueueType
-from omotes_sdk.internal.orchestrator_worker_events.messages.task_pb2 import (
+from omotes_sdk_protocol.internal.task_pb2 import (
     TaskResult,
     TaskProgressUpdate,
 )
