@@ -23,6 +23,9 @@ services:
       RABBITMQ_VIRTUALHOST: omotes_celery
       LOG_LEVEL: ${LOG_LEVEL}
       WORKER_TYPE: NO_FAULT
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
 
   test_hard_crash_worker:
     <<: *test_worker

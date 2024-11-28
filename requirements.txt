@@ -48,9 +48,9 @@ markupsafe==2.1.5
     # via mako
 multidict==6.0.5
     # via yarl
-omotes-sdk-protocol==0.1.6
+omotes-sdk-protocol==0.1.13
     # via omotes-sdk-python
-omotes-sdk-python==3.2.4
+omotes-sdk-python==3.2.5
     # via orchestrator (pyproject.toml)
 ordered-set==4.1.0
     # via pyecore
