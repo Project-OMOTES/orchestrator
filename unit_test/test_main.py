@@ -11,7 +11,7 @@ from uuid import UUID
 
 from omotes_sdk.job import Job
 from omotes_sdk.workflow_type import WorkflowType
-from omotes_sdk.internal.orchestrator_worker_events.messages.task_pb2 import TaskProgressUpdate
+from omotes_sdk_protocol.internal.task_pb2 import TaskProgressUpdate
 from omotes_sdk_protocol.job_pb2 import JobSubmission, JobProgressUpdate, JobStatusUpdate, JobResult
 from google.protobuf import json_format
 from google.protobuf.struct_pb2 import Struct

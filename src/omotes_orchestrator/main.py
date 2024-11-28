@@ -10,7 +10,7 @@ from typing import Any, Union
 
 from omotes_orchestrator.postgres_interface import PostgresInterface
 from omotes_orchestrator.postgres_job_manager import PostgresJobManager
-from omotes_sdk.internal.orchestrator_worker_events.messages.task_pb2 import (
+from omotes_sdk_protocol.internal.task_pb2 import (
     TaskResult,
     TaskProgressUpdate,
 )
@@ -477,6 +477,7 @@ class Orchestrator:
                         result_type=JobResult.ResultType.SUCCEEDED,
                         output_esdl=task_result.output_esdl,
                         logs=task_result.logs,
+                        esdl_messages=task_result.esdl_messages,
                     ),
                 )
                 self._cleanup_job(job.id)
@@ -493,6 +494,7 @@ class Orchestrator:
                         result_type=JobResult.ResultType.ERROR,
                         output_esdl=task_result.output_esdl,
                         logs=task_result.logs,
+                        esdl_messages=task_result.esdl_messages,
                     ),
                 )
                 self._cleanup_job(job.id)
