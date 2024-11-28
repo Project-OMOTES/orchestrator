@@ -33,6 +33,13 @@
         "parameter_type": "datetime",
         "key_name": "end_time"
       }
+    ],
+    "parameter_relations": [
+      {
+        "key_1": "start_time",
+        "key_2": "end_time",
+        "relation": "smaller"
+      }
     ]
   }
 ]
