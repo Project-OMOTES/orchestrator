@@ -9,7 +9,7 @@ description = "Orchestrator component of OMOTES project which monitors workflows
 classifiers = [
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -21,16 +21,16 @@ classifiers = [
 ]
 readme = "README.md"
 license = {file = "LICENSE"}
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 
 dependencies = [
-    "python-dotenv ~= 1.0.0",
+    "python-dotenv ~= 1.0.1",
     "dataclass-binder ~= 0.3.4",
-    "sqlalchemy ~= 2.0.27",
-    "psycopg2-binary ~= 2.9.9",
+    "sqlalchemy ~= 2.0.36",
+    "psycopg2-binary ~= 2.9.10",
     "celery ~= 5.3.6",
     "omotes-sdk-python ~= 3.2.5",
-    "alembic ~= 1.13.1",
+    "alembic ~= 1.14.0",
 ]
 
 [project.optional-dependencies]
@@ -105,7 +105,7 @@ count = true
 line-length = 100
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
