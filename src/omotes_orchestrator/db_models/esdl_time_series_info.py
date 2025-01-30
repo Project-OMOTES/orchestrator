@@ -27,5 +27,3 @@ class EsdlTimeSeriesInfoDB(Base):
     """Optional omotes job id."""
     job_reference: Optional[str] = db.Column(db.String, nullable=True)
     """Optional omotes job reference."""
-    size_mb: Optional[float] = db.Column(db.Float, nullable=True)
-    """Optional approximate database size in MB."""

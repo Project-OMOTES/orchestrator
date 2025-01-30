@@ -315,20 +315,6 @@ class PostgresInterface:
                 )
                 session.add(new_esdl_time_series_info)
 
-    def get_esdl_time_series_info_by_job_id(
-        self, job_id: uuid.UUID
-    ) -> Optional[EsdlTimeSeriesInfoDB]:
-        """Retrieve the ESDL time series info from the database.
-
-        :param job_id: job_id to retrieve the EsdlTimeSeriesInfoDB information for.
-        :return: EsdlTimeSeriesInfoDB if it is available in the database.
-        """
-        LOGGER.debug("Retrieving ESDL time series info for job with id '%s'", job_id)
-        with session_scope() as session:
-            stmnt = select(EsdlTimeSeriesInfoDB).where(EsdlTimeSeriesInfoDB.job_id == job_id)
-            esdl_time_series_info = session.scalar(stmnt)
-        return esdl_time_series_info
-
     def get_esdl_time_series_info_by_esdl_id(self, esdl_id: str) -> Optional[EsdlTimeSeriesInfoDB]:
         """Retrieve the ESDL time series info from the database.
 
