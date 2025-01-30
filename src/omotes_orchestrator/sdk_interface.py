@@ -9,6 +9,7 @@ from omotes_sdk_protocol.job_pb2 import (
     JobStatusUpdate,
     JobResult,
     JobCancel,
+    TimeSeriesDelete,
 )
 from omotes_sdk_protocol.workflow_pb2 import RequestAvailableWorkflows
 from omotes_sdk.internal.common.broker_interface import BrokerInterface, AMQPQueueType
@@ -58,6 +59,24 @@ class JobCancellationHandler:
         cancelled_job.ParseFromString(message)
 
         self.callback_on_cancel_job(cancelled_job)
+
+
+@dataclass
+class TimeSeriesDeletionHandler:
+    """Handler to set up callback for receiving time series deletions."""
+
+    callback_on_delete_time_series: Callable[[TimeSeriesDelete], None]
+    """Callback to call when a time series deletion is received."""
+
+    def callback_on_time_series_deleted_wrapped(self, message: bytes) -> None:
+        """Prepare the `TimeSeriesDelete` message before passing them to the callback.
+
+        :param message: Serialized AMQP message containing a time series deletion.
+        """
+        time_series_delete = TimeSeriesDelete()
+        time_series_delete.ParseFromString(message)
+
+        self.callback_on_delete_time_series(time_series_delete)
 
 
 @dataclass
@@ -132,6 +151,21 @@ class SDKInterface:
         self.broker_if.declare_queue_and_add_subscription(
             queue_name=OmotesQueueNames.job_cancel_queue_name(),
             callback_on_message=callback_handler.callback_on_job_cancelled_wrapped,
+            queue_type=AMQPQueueType.DURABLE,
+            exchange_name=OmotesQueueNames.omotes_exchange_name(),
+        )
+
+    def connect_to_time_series_deletions(
+        self, callback_on_time_series_delete: Callable[[TimeSeriesDelete], None]
+    ) -> None:
+        """Connect to the time series deletions queue.
+
+        :param callback_on_time_series_delete: Callback to handle any new time series deletions.
+        """
+        callback_handler = TimeSeriesDeletionHandler(callback_on_time_series_delete)
+        self.broker_if.declare_queue_and_add_subscription(
+            queue_name=OmotesQueueNames.time_series_delete_queue_name(),
+            callback_on_message=callback_handler.callback_on_time_series_deleted_wrapped,
             queue_type=AMQPQueueType.DURABLE,
             exchange_name=OmotesQueueNames.omotes_exchange_name(),
         )

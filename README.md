@@ -21,7 +21,7 @@ The following directory structure is used:
 - `unit_test/`: All unit tests for the orchestrator.
 - `.dockerignore`: Contains all files and directories which should not be available while building
   the docker image.
-- `.env-template`: Template `.env` file to run the orchestrator locally outside of docker.
+- `.env.template`: Template `.env` file to run the orchestrator locally outside of docker.
 - `.gitignore`: Contains all files and directories which are not kept in Git source control.
 - `dev-requirements.txt`: Pinned versions of all development and non-development dependencies.
 - `Dockerfile`: The build instructions for building the docker image.
@@ -53,7 +53,7 @@ extension `.sh).
 
 A typical development workflow would be:
 
-1. create and configure `.env` from `.env-template`
+1. create and configure `.env` from `.env.template`
 2. run `create_venv`
 3. run `install_dependencies`.
 4. develop or update the codebase according to the requirements...

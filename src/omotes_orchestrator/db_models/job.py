@@ -36,6 +36,8 @@ class JobDB(Base):
 
     job_id: uuid.UUID = db.Column(UUID(as_uuid=True), primary_key=True)  # type: ignore [misc]
     """OMOTES identifier for the job."""
+    job_reference: Optional[str] = db.Column(db.String, nullable=True)
+    """Human-readable reference of the omotes job."""
     celery_id: Optional[str] = db.Column(db.String, nullable=True)
     """Celery identifier for the task. Only available if job is submitted to Celery."""
     workflow_type: str = db.Column(db.String, nullable=False)
