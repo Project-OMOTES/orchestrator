@@ -1,1 +1,1 @@
- omotes-sdk-python == 3.2.4
+omotes-sdk-python == 4.0.0
