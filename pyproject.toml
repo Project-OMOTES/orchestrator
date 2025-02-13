@@ -29,7 +29,7 @@ dependencies = [
     "sqlalchemy ~= 2.0.27",
     "psycopg2-binary ~= 2.9.9",
     "celery ~= 5.3.6",
-    "omotes-sdk-python ~= 3.2.5",
+    "omotes-sdk-python ~= 4.0.0",
     "alembic ~= 1.13.1",
     "influxdb ~= 5.3.2",
 ]
