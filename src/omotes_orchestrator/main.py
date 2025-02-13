@@ -256,7 +256,9 @@ class Orchestrator:
         self.celery_if.stop()
         self.postgres_job_manager.stop()
         self.timeout_job_manager.stop()
+        self.esdl_time_series_manager.stop()
         self.postgresql_if.stop()
+        self.time_series_db_if.stop()
 
     def request_workflows_handler(self, request_workflows: RequestAvailableWorkflows) -> None:
         """When an available work flows request is received from the SDK.
@@ -432,7 +434,7 @@ class Orchestrator:
                 )
                 self._cleanup_job(job_id)
 
-        self.postgresql_if.set_esdl_time_series_data_inactive(job_deletion.uuid)
+        self.postgresql_if.set_esdl_time_series_data_inactive(job_id)
 
     def _cleanup_job(self, job_id: uuid.UUID) -> None:
         """Cleanup any references to job with id `job_id`.
@@ -442,12 +444,14 @@ class Orchestrator:
         self.postgresql_if.delete_job(job_id)
         self._init_barriers.cleanup_barrier(job_id)
 
-    def _guard_time_series_data_from_cleanup(self, esdl: str, job_id, job_reference) -> None:
+    def _guard_time_series_data_from_cleanup(
+        self, esdl: str, job_id: uuid.UUID, job_reference: str | None
+    ) -> None:
         """Guard time series data from cleanup for ESDL `esdl`.
 
         :param esdl: The ESDL for which to guard the time series data from cleanup.
         :param job_id: ID of the job that created this ESDL.
-        :param esdl: Reference of the job that created this ESDL.
+        :param job_reference: Reference of the job that created this ESDL.
         """
         output_esdl_id = pyesdl_from_string(esdl).energy_system.id
         self.postgresql_if.put_new_esdl_time_series_info(

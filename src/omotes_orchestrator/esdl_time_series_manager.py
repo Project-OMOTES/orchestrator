@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timezone
 import threading
 from omotes_orchestrator.config import PostgresJobManagerConfig
-from omotes_orchestrator.db_models import EsdlTimeSeriesInfoDB
+from omotes_orchestrator.db_models import SQLEsdlTimeSeriesInfoDB
 from omotes_orchestrator.postgres_interface import PostgresInterface
 from omotes_orchestrator.time_series_db_interface import TimeSeriesDBInterface
 
@@ -18,8 +18,6 @@ class EsdlTimeSeriesManager:
     """Interface to time series database."""
     postgres_job_manager_config: PostgresJobManagerConfig
     """PostgresJobManager configuration"""
-    _job_retention_sec: int
-    """Allowed retention time in seconds of a postgres job row: maximum duration of a job"""
     _stop_event: threading.Event
     """Event to signal the thread to stop"""
     _inactive_time_series_data_cleaner_thread: threading.Thread
@@ -37,7 +35,6 @@ class EsdlTimeSeriesManager:
         self.postgresql_if = postgresql_if
         self.time_series_database_if = time_series_database_if
         self.postgres_job_manager_config = postgres_job_manager_config
-        self._job_retention_sec = self.postgres_job_manager_config.job_retention_sec
 
         self._stop_event = threading.Event()
         self._inactive_time_series_data_cleaner_thread = threading.Thread(
@@ -72,12 +69,12 @@ class EsdlTimeSeriesManager:
           time, marking the time series data for deletion
         - if an ESDL time series data collection (database) has a corresponding
           `esdl_time_series_info` table entry, and `deactivated_at` is non-`NULL`, and
-          `_job_retention_sec` has passed since `deactivated_at`: remove the time series database
-          and the `esdl_time_series_info` table entry
+          `postgres_job_manager_config.job_retention_sec` has passed since `deactivated_at`: remove
+          the time series database and the `esdl_time_series_info` table entry
         2. Postgres `esdl_time_series_info` table cleanup
-        - if a `esdl_time_series_info` table entry has no 'esdl_id' of no corresponding time series
-          data, and _job_retention_sec` has passed since `registered_at`: remove this
-          `esdl_time_series_info` table entry
+        - if a `esdl_time_series_info` table entry has no 'esdl_id' of a corresponding time series
+          data, and postgres_job_manager_config.job_retention_sec` has passed since `registered_at`:
+          remove this `esdl_time_series_info` table entry
         """
         while not self._stop_event.is_set():
             now_time = datetime.now(timezone.utc)
@@ -92,7 +89,9 @@ class EsdlTimeSeriesManager:
                 )
                 if esdl_time_series_info:
                     if self.time_series_data_is_timed_out(
-                        esdl_time_series_info, now_time, self._job_retention_sec
+                        esdl_time_series_info,
+                        now_time,
+                        self.postgres_job_manager_config.job_retention_sec,
                     ):
                         LOGGER.info("time series manager: delete time series for ESDL: %s", esdl_id)
                         self.time_series_database_if.delete_database_for_esdl(esdl_id)
@@ -105,11 +104,11 @@ class EsdlTimeSeriesManager:
 
             esdl_time_series_info_entries = self.postgresql_if.get_all_esdl_time_series_infos()
             for esdl_time_series_info in esdl_time_series_info_entries:
-                if self.esdl_time_series_info_is_stale(
+                if self.sql_esdl_time_series_info_is_stale(
                     esdl_time_series_info,
                     time_series_db_esdl_ids,
                     now_time,
-                    self._job_retention_sec,
+                    self.postgres_job_manager_config.job_retention_sec,
                 ):
                     LOGGER.info(
                         "time series manager: delete ESDL time series info for: %s",
@@ -121,11 +120,11 @@ class EsdlTimeSeriesManager:
                 LOGGER.info("Stopped the time series data cleaner gracefully.")
                 break
 
-            self._stop_event.wait(self._job_retention_sec)
+            self._stop_event.wait(self.postgres_job_manager_config.job_retention_sec)
 
     @staticmethod
     def time_series_data_is_timed_out(
-        esdl_time_series_info: EsdlTimeSeriesInfoDB, ref_time: datetime, retention_sec: int
+        esdl_time_series_info: SQLEsdlTimeSeriesInfoDB, ref_time: datetime, retention_sec: int
     ) -> bool:
         """Check if the time series data is timed out and can be safely deleted.
 
@@ -140,8 +139,8 @@ class EsdlTimeSeriesManager:
         return False
 
     @staticmethod
-    def esdl_time_series_info_is_stale(
-        esdl_time_series_info: EsdlTimeSeriesInfoDB,
+    def sql_esdl_time_series_info_is_stale(
+        esdl_time_series_info: SQLEsdlTimeSeriesInfoDB,
         time_series_db_esdl_ids: list[str],
         ref_time: datetime,
         retention_sec: int,
