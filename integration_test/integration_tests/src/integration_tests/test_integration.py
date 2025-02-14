@@ -125,6 +125,8 @@ EMPTY_ESDL = """<?xml version='1.0' encoding='UTF-8'?>
 </esdl:EnergySystem>
 
 """
+
+
 class TestIntegration(unittest.TestCase):
     def test__hard_crash(self):
         # Arrange
