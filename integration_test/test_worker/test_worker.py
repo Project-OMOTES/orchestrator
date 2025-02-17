@@ -1,9 +1,12 @@
 import logging
 import os
 import time
+from typing import Optional, Tuple, List
 
 from omotes_sdk import LogLevel, setup_logging
+from omotes_sdk.types import ProtobufDict
 from omotes_sdk.internal.worker.worker import initialize_worker, UpdateProgressHandler
+from omotes_sdk.internal.orchestrator_worker_events.esdl_messages import EsdlMessage
 
 setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL", "INFO")), "test_worker")
 setup_logging(LogLevel.parse(os.environ.get("LOG_LEVEL", "INFO")), "celery")
@@ -28,8 +31,8 @@ def worker_type_to_task_type(worker_type: str):
 
 
 def test_worker_task(
-    input_esdl: str, params_dict: dict, update_progress_handler: UpdateProgressHandler
-) -> str:
+    input_esdl: str, workflow_config: ProtobufDict, update_progress_handler: UpdateProgressHandler
+) -> Tuple[Optional[str], List[EsdlMessage]]:
     update_progress_handler(0.3, f"Before log {WORKER_TYPE}")
     logger.info("Test worker task running %s.", WORKER_TYPE)
     if WORKER_TYPE == "NO_FAULT":
@@ -40,7 +43,7 @@ def test_worker_task(
     elif WORKER_TYPE == "LONG_SLEEP":
         time.sleep(100)
     update_progress_handler(0.7, f"After log {WORKER_TYPE}")
-    return input_esdl
+    return input_esdl, []
 
 
 if __name__ == "__main__":

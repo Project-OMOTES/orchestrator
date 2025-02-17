@@ -7,7 +7,9 @@ import uuid
 from datetime import timedelta
 from types import FrameType
 from typing import Any, Union
+from omotes_sdk.internal.common.esdl_util import pyesdl_from_string
 
+from omotes_orchestrator.esdl_time_series_manager import EsdlTimeSeriesManager
 from omotes_orchestrator.postgres_interface import PostgresInterface
 from omotes_orchestrator.postgres_job_manager import PostgresJobManager
 from omotes_sdk_protocol.internal.task_pb2 import (
@@ -19,7 +21,7 @@ from omotes_sdk_protocol.job_pb2 import (
     JobResult,
     JobStatusUpdate,
     JobProgressUpdate,
-    JobCancel,
+    JobDelete,
 )
 from omotes_sdk_protocol.workflow_pb2 import RequestAvailableWorkflows
 from omotes_sdk.workflow_type import WorkflowTypeManager
@@ -31,6 +33,7 @@ from omotes_orchestrator.celery_interface import CeleryInterface
 from omotes_orchestrator.config import OrchestratorConfig
 from omotes_orchestrator.db_models.job import JobStatus as JobStatusDB, JobDB
 from omotes_orchestrator.sdk_interface import SDKInterface
+from omotes_orchestrator.time_series_db_interface import TimeSeriesDBInterface
 from omotes_orchestrator.timeout_job_manager import TimeoutJobManager
 from omotes_orchestrator.worker_interface import WorkerInterface
 
@@ -149,12 +152,16 @@ class Orchestrator:
     """Interface to the Celery app."""
     postgresql_if: PostgresInterface
     """Interface to PostgreSQL."""
+    time_series_db_if: TimeSeriesDBInterface
+    """Interface to time series database."""
     workflow_manager: WorkflowTypeManager
     """Store for all available workflow types."""
     postgres_job_manager: PostgresJobManager
     """Manage and clean up the postgres stale job row."""
     timeout_job_manager: TimeoutJobManager
     """Cancel and delete the job when it is timed out."""
+    esdl_time_series_manager: EsdlTimeSeriesManager
+    """Delete inactive (stale) time series data."""
     _init_barriers: LifeCycleBarrierManager
 
     def __init__(
@@ -164,9 +171,11 @@ class Orchestrator:
         worker_if: WorkerInterface,
         celery_if: CeleryInterface,
         postgresql_if: PostgresInterface,
+        time_series_db_if: TimeSeriesDBInterface,
         workflow_manager: WorkflowTypeManager,
         postgres_job_manager: PostgresJobManager,
         timeout_job_manager: TimeoutJobManager,
+        esdl_time_series_manager: EsdlTimeSeriesManager,
     ):
         """Construct the orchestrator.
 
@@ -185,9 +194,11 @@ class Orchestrator:
         self.worker_if = worker_if
         self.celery_if = celery_if
         self.postgresql_if = postgresql_if
+        self.time_series_db_if = time_series_db_if
         self.workflow_manager = workflow_manager
         self.postgres_job_manager = postgres_job_manager
         self.timeout_job_manager = timeout_job_manager
+        self.esdl_time_series_manager = esdl_time_series_manager
         self._init_barriers = LifeCycleBarrierManager()
 
         if self.timeout_job_manager.orchestrator is None:
@@ -209,6 +220,8 @@ class Orchestrator:
         self.postgresql_if.start()
         self._resume_init_barriers(self.postgresql_if.get_all_jobs())
 
+        self.time_series_db_if.start()
+
         self.celery_if.start()
 
         self.worker_if.start()
@@ -223,8 +236,8 @@ class Orchestrator:
         self.omotes_sdk_if.connect_to_job_submissions(
             callback_on_new_job=self.new_job_submitted_handler
         )
-        self.omotes_sdk_if.connect_to_job_cancellations(
-            callback_on_job_cancel=self.job_cancellation_handler
+        self.omotes_sdk_if.connect_to_job_deletions(
+            callback_on_job_delete=self.job_deletion_handler
         )
 
         self.omotes_sdk_if.connect_to_request_available_workflows(
@@ -234,6 +247,7 @@ class Orchestrator:
 
         self.postgres_job_manager.start()
         self.timeout_job_manager.start()
+        self.esdl_time_series_manager.start()
 
     def stop(self) -> None:
         """Stop the orchestrator."""
@@ -242,7 +256,9 @@ class Orchestrator:
         self.celery_if.stop()
         self.postgres_job_manager.stop()
         self.timeout_job_manager.stop()
+        self.esdl_time_series_manager.stop()
         self.postgresql_if.stop()
+        self.time_series_db_if.stop()
 
     def request_workflows_handler(self, request_workflows: RequestAvailableWorkflows) -> None:
         """When an available work flows request is received from the SDK.
@@ -318,6 +334,7 @@ class Orchestrator:
 
             self.postgresql_if.put_new_job(
                 job_id=job.id,
+                job_reference=job_submission.job_reference,
                 workflow_type=job_submission.workflow_type,
                 timeout_after=timeout_after_ms,
             )
@@ -345,24 +362,28 @@ class Orchestrator:
             )
             self._init_barriers.set_barrier(submitted_job_id)
 
-    def job_cancellation_handler(self, job_cancellation: JobCancel) -> None:
-        """When a cancellation request is received from the SDK.
+    def job_deletion_handler(self, job_deletion: JobDelete) -> None:
+        """When a deletion request is received from the SDK.
 
         Note: This function must be idempotent. It will cancel the Celery task,
         remove the job from the database and send the last status update and result that the job
         is cancelled.
+        Additionally, it will remove time series data created by this job.
 
         If the job is registered in the database but no celery id is persisted, this is logged
-        as a warning. Rationale: The queue through which cancellations are received is a different
+        as info. Rationale: The queue through which deletions are received is a different
         queue from where workers post results. Therefore, this function cannot rely on any ordering
         of when a job is submitted, a progress update is received or when a result is received.
-        In other words, cancellations are only possible when the cancellation is received when the
-        job is submitted or active. In all other cases, the cancellation is ignored.
+        In other words, job cancellations are only possible when the cancellation is received when
+        the job is submitted or active.
+        In any case, time series data is deleted, if present. The deletion does not happen
+        immediately but after a waiting period, to allow job results to come in after the delete
+         request.
 
-        :param job_cancellation: Request to cancel a job.
+        :param job_deletion: Request to delete a job.
         """
-        logger.info("Received job cancellation for job %s", job_cancellation.uuid)
-        job_id = uuid.UUID(job_cancellation.uuid)
+        logger.info("Received job deletion for job %s", job_deletion.uuid)
+        job_id = uuid.UUID(job_deletion.uuid)
 
         job_db = self.postgresql_if.get_job(job_id)
         if job_db and job_db.status == JobStatusDB.REGISTERED:
@@ -370,26 +391,25 @@ class Orchestrator:
             job_db = self.postgresql_if.get_job(job_id)
 
         if job_db is None:
-            logger.warning(
-                "Received a request to cancel job %s but it was already completed, "
-                "cancelled, removed or was not yet submitted.",
-                job_cancellation.uuid,
+            logger.info(
+                "Received a request to delete job %s but it was already completed, "
+                "deleted, removed or was not yet submitted.",
+                job_deletion.uuid,
             )
         elif job_db.celery_id is None:
-            logger.warning(
-                "Received a request to cancel job %s but this was has been"
-                "registered but not yet successfully submitted to Celery."
-                "Ignoring message as it cannot be handled.",
-                job_cancellation.uuid,
+            logger.info(
+                "Received a request to delete job %s but this was has been"
+                "registered but not yet successfully submitted to Celery.",
+                job_deletion.uuid,
             )
         else:
             workflow_type = self.workflow_manager.get_workflow_by_name(job_db.workflow_type)
 
             if workflow_type is None:
                 logger.error(
-                    "Received a request to cancel job %s but workflow %s persisted in "
+                    "Received a request to delete job %s but workflow %s persisted in "
                     "database is not configured in this orchestrator.",
-                    job_cancellation.uuid,
+                    job_deletion.uuid,
                     job_db.workflow_type,
                 )
                 # TODO Send an error result to SDK
@@ -414,6 +434,8 @@ class Orchestrator:
                 )
                 self._cleanup_job(job_id)
 
+        self.postgresql_if.set_esdl_time_series_data_inactive(job_id)
+
     def _cleanup_job(self, job_id: uuid.UUID) -> None:
         """Cleanup any references to job with id `job_id`.
 
@@ -421,6 +443,22 @@ class Orchestrator:
         """
         self.postgresql_if.delete_job(job_id)
         self._init_barriers.cleanup_barrier(job_id)
+
+    def _guard_time_series_data_from_cleanup(
+        self, esdl: str, job_id: uuid.UUID, job_reference: str | None
+    ) -> None:
+        """Guard time series data from cleanup for ESDL `esdl`.
+
+        :param esdl: The ESDL for which to guard the time series data from cleanup.
+        :param job_id: ID of the job that created this ESDL.
+        :param job_reference: Reference of the job that created this ESDL.
+        """
+        output_esdl_id = pyesdl_from_string(esdl).energy_system.id
+        self.postgresql_if.put_new_esdl_time_series_info(
+            output_esdl_id=output_esdl_id,
+            job_id=job_id,
+            job_reference=job_reference,
+        )
 
     def task_result_received(self, task_result: TaskResult) -> None:
         """When a task result is received from a worker through RabbitMQ, Celery side.
@@ -481,6 +519,10 @@ class Orchestrator:
                     ),
                 )
                 self._cleanup_job(job.id)
+
+                self._guard_time_series_data_from_cleanup(
+                    task_result.output_esdl, job.id, job_db.job_reference
+                )
             elif task_result.result_type == TaskResult.ResultType.ERROR:
                 logger.info(
                     "Received error result for job %s through task %s",
@@ -632,8 +674,12 @@ def main() -> None:
     celery_if = CeleryInterface(config.celery_config)
     worker_if = WorkerInterface(config)
     postgresql_if = PostgresInterface(config.postgres_config)
+    time_series_database_if = TimeSeriesDBInterface(config.time_series_db_config)
     postgres_job_manager = PostgresJobManager(postgresql_if, config.postgres_job_manager_config)
     timeout_job_manager = TimeoutJobManager(postgresql_if, None, config.timeout_job_manager_config)
+    esdl_time_series_manager = EsdlTimeSeriesManager(
+        postgresql_if, time_series_database_if, config.postgres_job_manager_config
+    )
 
     orchestrator = Orchestrator(
         config,
@@ -641,9 +687,11 @@ def main() -> None:
         worker_if,
         celery_if,
         postgresql_if,
+        time_series_database_if,
         workflow_type_manager,
         postgres_job_manager,
         timeout_job_manager,
+        esdl_time_series_manager,
     )
 
     stop_event = threading.Event()

@@ -8,7 +8,7 @@ from omotes_sdk_protocol.job_pb2 import (
     JobProgressUpdate,
     JobStatusUpdate,
     JobResult,
-    JobCancel,
+    JobDelete,
 )
 from omotes_sdk_protocol.workflow_pb2 import RequestAvailableWorkflows
 from omotes_sdk.internal.common.broker_interface import BrokerInterface, AMQPQueueType
@@ -43,21 +43,21 @@ class JobSubmissionCallbackHandler:
 
 
 @dataclass
-class JobCancellationHandler:
-    """Handler to set up callback for receiving job cancellations."""
+class JobDeletionHandler:
+    """Handler to set up callback for receiving job deletions."""
 
-    callback_on_cancel_job: Callable[[JobCancel], None]
-    """Callback to call when a cancellation is received."""
+    callback_on_delete_job: Callable[[JobDelete], None]
+    """Callback to call when a deletion is received."""
 
-    def callback_on_job_cancelled_wrapped(self, message: bytes) -> None:
-        """Prepare the `JobCancel` message before passing them to the callback.
+    def callback_on_job_deleted_wrapped(self, message: bytes) -> None:
+        """Prepare the `JobDelete` message before passing them to the callback.
 
-        :param message: Serialized AMQP message containing a job cancellation.
+        :param message: Serialized AMQP message containing a job deletion.
         """
-        cancelled_job = JobCancel()
-        cancelled_job.ParseFromString(message)
+        deleted_job = JobDelete()
+        deleted_job.ParseFromString(message)
 
-        self.callback_on_cancel_job(cancelled_job)
+        self.callback_on_delete_job(deleted_job)
 
 
 @dataclass
@@ -121,17 +121,17 @@ class SDKInterface:
             exchange_name=OmotesQueueNames.omotes_exchange_name(),
         )
 
-    def connect_to_job_cancellations(
-        self, callback_on_job_cancel: Callable[[JobCancel], None]
+    def connect_to_job_deletions(
+        self, callback_on_job_delete: Callable[[JobDelete], None]
     ) -> None:
-        """Connect to the job cancellations queue.
+        """Connect to the job deletions queue.
 
-        :param callback_on_job_cancel: Callback to handle any new job cancellations.
+        :param callback_on_job_delete: Callback to handle any new job deletions.
         """
-        callback_handler = JobCancellationHandler(callback_on_job_cancel)
+        callback_handler = JobDeletionHandler(callback_on_job_delete)
         self.broker_if.declare_queue_and_add_subscription(
-            queue_name=OmotesQueueNames.job_cancel_queue_name(),
-            callback_on_message=callback_handler.callback_on_job_cancelled_wrapped,
+            queue_name=OmotesQueueNames.job_delete_queue_name(),
+            callback_on_message=callback_handler.callback_on_job_deleted_wrapped,
             queue_type=AMQPQueueType.DURABLE,
             exchange_name=OmotesQueueNames.omotes_exchange_name(),
         )

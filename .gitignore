@@ -105,6 +105,7 @@ celerybeat.pid
 
 # Environments
 .env
+.env.test
 .venv
 env/
 venv/
@@ -220,8 +221,6 @@ fabric.properties
 
 unit_test_coverage/
 test-results.xml
-
-.env.*
 
 # Debug logs
 logs/

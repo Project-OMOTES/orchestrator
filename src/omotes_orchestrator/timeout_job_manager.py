@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 import threading
 from omotes_orchestrator.postgres_interface import PostgresInterface
 from omotes_orchestrator.db_models.job import JobDB, JobStatus
-from omotes_sdk_protocol.job_pb2 import JobCancel
+from omotes_sdk_protocol.job_pb2 import JobDelete
 from omotes_orchestrator.config import TimeoutJobManagerConfig
 
 LOGGER = logging.getLogger("omotes_orchestrator")
@@ -87,7 +87,7 @@ class TimeoutJobManager:
         Meanwhile, if the TimeoutJobManager is instantiated longer than the
         configured buffer time, and the relationship between TimeoutJobManager
         and Orchestrator is correctly linked (self.orchestrator is not None, so
-        self.orchestrator.job_cancellation_handler() can be called),
+        self.orchestrator.job_deletion_handler() can be called),
         the job/row can be canceled outright.
         """
         while not self._stop_event.is_set():
@@ -99,7 +99,7 @@ class TimeoutJobManager:
                 jobs = self.postgresql_if.get_all_jobs()
                 for job in jobs:
                     if self.job_is_timedout(job):
-                        self.orchestrator.job_cancellation_handler(JobCancel(uuid=str(job.job_id)))
+                        self.orchestrator.job_deletion_handler(JobDelete(uuid=str(job.job_id)))
 
                         timeout_job_manager_up_mins = round(self._system_activation_sec() / 60, 1)
                         LOGGER.warning(

@@ -1,4 +1,3 @@
-import contextlib
 import os
 import threading
 import unittest
@@ -118,6 +117,16 @@ def submit_a_job(
     )
 
 
+EMPTY_ESDL = """<?xml version='1.0' encoding='UTF-8'?>
+<esdl:EnergySystem xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:esdl="http://www.tno.nl/esdl" name="Untitled EnergySystem" description="" id="24e28056-4889-428b-a2d3-065185dbb123" esdlVersion="v2401" version="1">
+  <instance xsi:type="esdl:Instance" id="86ebbf1c-809e-43b3-9332-5e40a39e2a84" name="Untitled Instance">
+    <area xsi:type="esdl:Area" id="eef34e0d-6df6-4c0d-9038-d924ed9caa12" name="Untitled Area"/>
+  </instance>
+</esdl:EnergySystem>
+
+"""
+
+
 class TestIntegration(unittest.TestCase):
     def test__hard_crash(self):
         # Arrange
@@ -128,7 +137,7 @@ class TestIntegration(unittest.TestCase):
         with omotes_client() as omotes_if:
             submit_a_job(
                 omotes_if,
-                "esdl_file",
+                EMPTY_ESDL,
                 workflow_type,
                 params_dict={},
                 omotes_job_result_handler=job_handler,
@@ -144,7 +153,7 @@ class TestIntegration(unittest.TestCase):
         )
         assert_orchestrator_tables_are_empty()
 
-    def test__cancel(self):
+    def test__delete(self):
         # Arrange
         job_handler = OmotesJobHandler()
         workflow_type = "test_worker_long_sleep"
@@ -153,7 +162,7 @@ class TestIntegration(unittest.TestCase):
         with omotes_client() as omotes_if:
             job = submit_a_job(
                 omotes_if,
-                "esdl_file",
+                EMPTY_ESDL,
                 workflow_type,
                 params_dict={},
                 omotes_job_result_handler=job_handler,
@@ -163,7 +172,7 @@ class TestIntegration(unittest.TestCase):
             self.assertIn(
                 JobStatusUpdate.RUNNING, [update.status for update in job_handler.status_updates]
             )
-            omotes_if.cancel_job(job)
+            omotes_if.delete_job(job)
             job_handler.wait_until_result(30.0)
 
         # Assert
