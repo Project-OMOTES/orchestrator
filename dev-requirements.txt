@@ -4,7 +4,7 @@
 #
 #    pip-compile --constraint=requirements.txt --extra=dev --output-file=dev-requirements.txt pyproject.toml
 #
-aio-pika==9.5.4
+aio-pika==9.4.3
     # via
     #   -c requirements.txt
     #   omotes-sdk-python
@@ -70,10 +70,7 @@ dataclass-binder==0.3.4
     #   -c requirements.txt
     #   orchestrator (pyproject.toml)
 exceptiongroup==1.2.2
-    # via
-    #   -c requirements.txt
-    #   aio-pika
-    #   pytest
+    # via pytest
 flake8==7.1.1
     # via
     #   flake8-bugbear
@@ -149,11 +146,11 @@ mypy-extensions==1.0.0
     # via
     #   black
     #   mypy
-omotes-sdk-protocol==0.1.15
+omotes-sdk-protocol==1.0.0
     # via
     #   -c requirements.txt
     #   omotes-sdk-python
-omotes-sdk-python==4.0.0
+omotes-sdk-python==4.0.1
     # via
     #   -c requirements.txt
     #   orchestrator (pyproject.toml)

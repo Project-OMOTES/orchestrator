@@ -4,7 +4,7 @@
 #
 #    pip-compile --output-file=requirements.txt pyproject.toml
 #
-aio-pika==9.5.4
+aio-pika==9.4.3
     # via omotes-sdk-python
 aiormq==6.8.1
     # via aio-pika
@@ -36,8 +36,6 @@ click-repl==0.3.0
     # via celery
 dataclass-binder==0.3.4
     # via orchestrator (pyproject.toml)
-exceptiongroup==1.2.2
-    # via aio-pika
 future-fstrings==1.2.0
     # via pyecore
 greenlet==3.1.1
@@ -60,9 +58,9 @@ msgpack==1.1.0
     # via influxdb
 multidict==6.1.0
     # via yarl
-omotes-sdk-protocol==0.1.15
+omotes-sdk-protocol==1.0.0
     # via omotes-sdk-python
-omotes-sdk-python==4.0.0
+omotes-sdk-python==4.0.1
     # via orchestrator (pyproject.toml)
 ordered-set==4.1.0
     # via pyecore
