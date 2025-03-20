@@ -29,7 +29,7 @@ from omotes_sdk.job import Job
 
 from google.protobuf import json_format
 
-from omotes_orchestrator.celery_interface import CeleryInterface
+from omotes_orchestrator.celery_interface import CeleryInterface, JobPriority
 from omotes_orchestrator.config import OrchestratorConfig
 from omotes_orchestrator.db_models.job import JobStatus as JobStatusDB, JobDB
 from omotes_orchestrator.sdk_interface import SDKInterface
@@ -305,10 +305,11 @@ class Orchestrator:
         job = Job(job_uuid, workflow_type)
 
         logger.info(
-            "Received new job %s with reference %s for workflow type %s",
+            "Received new job %s with reference %s for workflow type %s with priority %s.",
             job.id,
             job_submission.job_reference,
             job_submission.workflow_type,
+            JobPriority.from_job_submission_priority(job_submission.job_priority),
         )
         submitted_job_id = uuid.UUID(job_submission.uuid)
 
@@ -352,6 +353,7 @@ class Orchestrator:
                 job_reference,
                 job_submission.esdl,
                 json_format.MessageToDict(job_submission.params_dict),
+                job_priority=job_submission.job_priority,
             )
 
             self.postgresql_if.set_job_submitted(job.id, celery_task_id)
