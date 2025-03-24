@@ -2,7 +2,6 @@ import logging
 import uuid
 from enum import Enum
 from typing import Optional
-from typing_extensions import Self
 
 from celery import Celery
 from celery.result import AsyncResult
@@ -23,7 +22,10 @@ class JobPriority(Enum):
     HIGH = 6
 
     @classmethod
-    def from_job_submission_priority(cls, priority: JobSubmission.JobPriority) -> Self:
+    def from_job_submission_priority(
+        cls, priority: JobSubmission.JobPriority | int
+    ) -> "JobPriority":
+        """Convert from protobuf message priority to JobPriority."""
         if priority == JobSubmission.JobPriority.HIGH:
             return cls.HIGH
         elif priority == JobSubmission.JobPriority.MEDIUM:
@@ -68,7 +70,7 @@ class CeleryInterface:
         job_reference: Optional[str],
         input_esdl: str,
         params_dict: dict,
-        job_priority: JobSubmission.JobPriority = JobSubmission.JobPriority.LOW,
+        job_priority: JobSubmission.JobPriority | int = JobSubmission.JobPriority.LOW,
     ) -> str:
         """Start a new workflow.
 
