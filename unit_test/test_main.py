@@ -172,10 +172,12 @@ class OrchestratorTest(unittest.TestCase):
             self.celery_if = Mock()
             self.celery_if.start_workflow.return_value = "celery_id"
             self.postgresql_if = Mock()
+            self.time_series_db_if = Mock()
 
             self.workflow_manager = Mock()
             self.postgres_job_manager = Mock()
             self.timeout_job_manager = Mock()
+            self.esdl_time_series_manager = Mock()
 
             with patch(
                 "omotes_orchestrator.main.LifeCycleBarrierManager"
@@ -186,9 +188,11 @@ class OrchestratorTest(unittest.TestCase):
                     worker_if=self.worker_if,
                     celery_if=self.celery_if,
                     postgresql_if=self.postgresql_if,
+                    time_series_db_if=self.time_series_db_if,
                     workflow_manager=self.workflow_manager,
                     postgres_job_manager=self.postgres_job_manager,
                     timeout_job_manager=self.timeout_job_manager,
+                    esdl_time_series_manager=self.esdl_time_series_manager,
                 )
 
             self.life_cycle_barrier_manager_obj_mock = (
@@ -214,6 +218,7 @@ class OrchestratorTest(unittest.TestCase):
         params_dict = Struct()
         job_submission = JobSubmission(
             uuid=str(job_id),
+            job_reference="job_ref",
             timeout_ms=timeout,
             workflow_type=workflow_type.workflow_type_name,
             esdl=esdl,
@@ -233,13 +238,18 @@ class OrchestratorTest(unittest.TestCase):
         life_cycle_barrier_manager_obj_mock.ensure_barrier.assert_called_once_with(job_id)
         life_cycle_barrier_manager_obj_mock.set_barrier.assert_called_once_with(job_id)
         celery_if.start_workflow.assert_called_once_with(
-            job.workflow_type, job.id, None, job_submission.esdl, expected_params_dict
+            job.workflow_type,
+            job.id,
+            job_submission.job_reference,
+            job_submission.esdl,
+            expected_params_dict,
         )
         postgresql_if.job_exists.assert_called_once_with(job_id)
         postgresql_if.get_job_status.assert_not_called()
         postgresql_if.set_job_submitted.called_called_once_with(job_id, expected_celery_id)
         postgresql_if.put_new_job.assert_called_once_with(
             job_id=job.id,
+            job_reference=job_submission.job_reference,
             workflow_type=job_submission.workflow_type,
             timeout_after=expected_timeout,
         )

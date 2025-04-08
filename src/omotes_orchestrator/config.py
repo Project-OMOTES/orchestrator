@@ -41,6 +41,27 @@ class PostgreSQLConfig:
         self.password = os.environ.get(f"{prefix}POSTGRESQL_PASSWORD")
 
 
+class InfluxDBConfig:
+    """Retrieve InfluxDB configuration from environment variables."""
+
+    host: str
+    port: int
+    database: str
+    username: Optional[str]
+    password: Optional[str]
+
+    def __init__(self, prefix: str = ""):
+        """Create the InfluxDB configuration and retrieve values from env vars.
+
+        :param prefix: Prefix to the name environment variables.
+        """
+        self.host = os.environ.get(f"{prefix}INFLUXDB_HOST", "localhost")
+        self.port = int(os.environ.get(f"{prefix}INFLUXDB_PORT", "8096"))
+        self.database = os.environ.get(f"{prefix}INFLUXDB_DATABASE", "omotes_timeseries")
+        self.username = os.environ.get(f"{prefix}INFLUXDB_USERNAME")
+        self.password = os.environ.get(f"{prefix}INFLUXDB_PASSWORD")
+
+
 class PostgresJobManagerConfig:
     """Retrieve PostgresJobManager configuration from environment variables."""
 
@@ -110,6 +131,7 @@ class OrchestratorConfig:
         """Construct the orchestrator configuration using environment variables."""
         self.celery_config = CeleryConfig()
         self.postgres_config = PostgreSQLConfig()
+        self.time_series_db_config = InfluxDBConfig()
         self.postgres_job_manager_config = PostgresJobManagerConfig()
         self.timeout_job_manager_config = TimeoutJobManagerConfig()
         self.rabbitmq_omotes = EnvRabbitMQConfig("SDK_")

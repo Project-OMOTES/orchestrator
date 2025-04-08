@@ -8,7 +8,7 @@ from sqlalchemy import select, update, create_engine, orm, func, delete
 from sqlalchemy.orm import Session as SQLSession
 from sqlalchemy.engine import Engine, URL
 
-from omotes_orchestrator.db_models import JobDB, JobStatus, JobStartsDB
+from omotes_orchestrator.db_models import JobDB, JobStatus, JobStartsDB, SQLEsdlTimeSeriesInfoDB
 from omotes_orchestrator.config import PostgreSQLConfig
 
 LOGGER = logging.getLogger("omotes_orchestrator")
@@ -103,6 +103,7 @@ class PostgresInterface:
     def put_new_job(
         self,
         job_id: uuid.UUID,
+        job_reference: str,
         workflow_type: str,
         timeout_after: Optional[timedelta],
     ) -> None:
@@ -111,6 +112,7 @@ class PostgresInterface:
         Note: Assumption is that the job_id is unique and has not yet been added to the database.
 
         :param job_id: Unique identifier of the job.
+        :param job_reference: Human-readable reference of the job.
         :param workflow_type: Name of the workflow this job will execute.
         :param timeout_after: Maximum duration before the job is terminated due to timing out.
         """
@@ -124,6 +126,7 @@ class PostgresInterface:
 
             new_job = JobDB(
                 job_id=job_id,
+                job_reference=job_reference,
                 workflow_type=workflow_type,
                 status=JobStatus.REGISTERED,
                 registered_at=datetime.now(timezone.utc),
@@ -262,3 +265,146 @@ class PostgresInterface:
                 count = 0
 
         return count
+
+    def put_new_esdl_time_series_info(
+        self,
+        output_esdl_id: str,
+        job_id: uuid.UUID | None = None,
+        job_reference: str | None = None,
+        set_inactive: bool = False,
+    ) -> None:
+        """Insert a new esdl time series info entry into the database.
+
+        Note: if an entry already exists with the specified output_esdl_id the data is updated.
+        This can happen when receiving a result for a job which has already been cancelled. In this
+        case the entry will keep a non-null deactivated_at field, indicating that the time series
+        data will be removed.
+
+        :param output_esdl_id: Output ESDL id.
+        :param job_id: Unique identifier of the job.
+        :param job_reference: Name of the job.
+        :param set_inactive: Whether to set the time series data to be inactive.
+        """
+        if output_esdl_id is None:
+            raise RuntimeError("output_esdl_id should not be None!")
+
+        with session_scope() as session:
+            find_stmnt = select(SQLEsdlTimeSeriesInfoDB).where(
+                SQLEsdlTimeSeriesInfoDB.esdl_id == output_esdl_id
+            )
+            current_esdl_time_series = session.scalar(find_stmnt)
+            if current_esdl_time_series:
+                stmnt = (
+                    update(SQLEsdlTimeSeriesInfoDB)
+                    .where(SQLEsdlTimeSeriesInfoDB.esdl_id == output_esdl_id)
+                    .values(
+                        job_id=job_id,
+                        job_reference=job_reference,
+                    )
+                )
+                session.execute(stmnt)
+            else:
+                deactivated_at = None
+                if set_inactive:
+                    deactivated_at = datetime.now(timezone.utc)
+
+                new_esdl_time_series_info = SQLEsdlTimeSeriesInfoDB(
+                    row_id=uuid.uuid4(),
+                    esdl_id=output_esdl_id,
+                    registered_at=datetime.now(timezone.utc),
+                    deactivated_at=deactivated_at,
+                    job_id=job_id,
+                    job_reference=job_reference,
+                )
+                session.add(new_esdl_time_series_info)
+
+    def get_esdl_time_series_info_by_esdl_id(
+        self, esdl_id: str
+    ) -> Optional[SQLEsdlTimeSeriesInfoDB]:
+        """Retrieve the ESDL time series info from the database.
+
+        :param esdl_id: job_id to retrieve the EsdlTimeSeriesInfoDB information for.
+        :return: EsdlTimeSeriesInfoDB if it is available in the database.
+        """
+        LOGGER.debug("Retrieving ESDL time series info for ESDL with id '%s'", esdl_id)
+        with session_scope() as session:
+            stmnt = select(SQLEsdlTimeSeriesInfoDB).where(
+                SQLEsdlTimeSeriesInfoDB.esdl_id == esdl_id
+            )
+
+            esdl_time_series_info = session.scalar(stmnt)
+        return esdl_time_series_info
+
+    def get_all_esdl_time_series_infos(self) -> list[SQLEsdlTimeSeriesInfoDB]:
+        """Retrieve a list of all ESDL time series info entries in the database.
+
+        :return: List of all EsdlTimeSeriesInfoDB entries.
+        """
+        with session_scope() as session:
+            stmnt = select(SQLEsdlTimeSeriesInfoDB)
+            esdl_time_series_infos = list(session.scalars(stmnt).all())
+        return esdl_time_series_infos
+
+    def set_esdl_time_series_data_inactive(self, job_id: uuid.UUID) -> None:
+        """Set the time series data to inactive (stale) for the specified job_id.
+
+        Note: if no time series esdl row can be found a new entry will be created to make sure that,
+        if a future job result comes in, it will be deleted anyway.
+
+        :param job_id: id of the job to delete the time series for.
+        """
+        LOGGER.debug("Set time series data to inactive for job with id '%s'", job_id)
+        with session_scope() as session:
+            find_stmnt = select(SQLEsdlTimeSeriesInfoDB).where(
+                SQLEsdlTimeSeriesInfoDB.job_id == job_id
+            )
+            esdl_time_series = session.scalar(find_stmnt)
+            if esdl_time_series:
+                if esdl_time_series.deactivated_at is None:  # if 'deactivated_at' not already set
+                    stmnt = (
+                        update(SQLEsdlTimeSeriesInfoDB)
+                        .where(SQLEsdlTimeSeriesInfoDB.job_id == job_id)
+                        .values(
+                            deactivated_at=datetime.now(timezone.utc),
+                        )
+                    )
+                    session.execute(stmnt)
+            else:
+                new_esdl_time_series_info = SQLEsdlTimeSeriesInfoDB(
+                    row_id=uuid.uuid4(),
+                    job_id=job_id,
+                    registered_at=datetime.now(timezone.utc),
+                    deactivated_at=datetime.now(timezone.utc),
+                )
+                session.add(new_esdl_time_series_info)
+
+    def delete_esdl_time_series_info_by_esdl_id(self, output_esdl_id: str) -> bool:
+        """Remove ESDL time series info from the database by ESDL id.
+
+        :param output_esdl_id: output ESDL id to delete the time series for.
+        :return: True if the time series was removed or False if it was not in the database.
+        """
+        LOGGER.debug("Deleting ESDL time series info for ESDL with id '%s'", output_esdl_id)
+        with session_scope() as session:
+            find_stmnt = select(SQLEsdlTimeSeriesInfoDB).where(
+                SQLEsdlTimeSeriesInfoDB.esdl_id == output_esdl_id
+            )
+            esdl_time_series = session.scalar(find_stmnt)
+            result = False
+            if esdl_time_series:
+                session.delete(esdl_time_series)
+                result = True
+
+        return result
+
+    def delete_esdl_time_series_info(self, esdl_time_series_info: SQLEsdlTimeSeriesInfoDB) -> None:
+        """Remove ESDL time series info from the database.
+
+        :param esdl_time_series_info: Database esdl_time_series_info row.
+        :return: True if the time series was removed or False if it was not in the database.
+        """
+        LOGGER.debug(
+            "Deleting ESDL time series info with row id '%s'", esdl_time_series_info.row_id
+        )
+        with session_scope() as session:
+            session.delete(esdl_time_series_info)

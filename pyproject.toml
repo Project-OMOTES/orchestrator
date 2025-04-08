@@ -29,23 +29,29 @@ dependencies = [
     "sqlalchemy ~= 2.0.27",
     "psycopg2-binary ~= 2.9.9",
     "celery ~= 5.3.6",
-    "omotes-sdk-python ~= 3.2.5",
+    "omotes-sdk-python ~= 4.0.0",
     "alembic ~= 1.13.1",
+    "influxdb ~= 5.3.2",
 ]
 
 [project.optional-dependencies]
 dev = [
-    #"pip-tools~=6.13.0",  # Installed via create_env script
-    "black ~= 22.1.0",
-    "flake8 ~= 6.0.0",
-    "Flake8-pyproject ~= 1.2.3",
+    "setuptools ~= 75.6.0",
+    "wheel ~= 0.45.1",
+    "setuptools-git-versioning >= 2.0, < 3",
+    "black ~= 24.10.0",
+    "flake8 == 7.1.1",
+    "flake8-pyproject ~= 1.2.3",
     "flake8-docstrings ~= 1.7.0",
-    "flake8-quotes ~= 3.3.2",
-    "pytest ~= 7.3.1",
-    "pytest-cov ~= 4.0.0",
-    "mypy ~= 1.5.1",
-    "build ~= 1.0.3",
-    "setuptools-git-versioning < 2",
+    "flake8-quotes ~= 3.4.0",
+    "flake8-bugbear ~= 24.10.31",
+    "flake8-mock ~= 0.4",
+    "flake8-tuple ~= 0.4.1",
+    "pytest ~= 8.3.4",
+    "pytest-cov ~= 6.0.0",
+    "mypy ~= 1.13.0",
+    "isort == 5.13.2",
+    "build ~= 1.2.2",
     "sqlalchemy[mypy]",
     "types-protobuf ~= 4.24.0"
 ]
@@ -58,13 +64,18 @@ changelog = "https://github.com/Nieuwe-Warmte-Nu/orchestrator/blob/main/CHANGELO
 
 [build-system]
 build-backend = "setuptools.build_meta"
-requires = ["setuptools ~= 67.7.2", "wheel ~= 0.40.0", "setuptools-git-versioning<2"]
+requires = [
+    "setuptools ~= 75.6.0",
+    "wheel ~= 0.45.1",
+    "setuptools-git-versioning >= 2.0, < 3",
+]
 
 [tools.setuptools]
 packages = ["src/omotes_orchestrator"]
 
 [tool.setuptools-git-versioning]
 enabled = true
+starting_version = "0.0.1"
 
 [tool.pytest.ini_options]
 addopts = """--cov=omotes_orchestrator --cov-report html --cov-report term-missing \
@@ -120,4 +131,8 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "celery.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "influxdb.*"
 ignore_missing_imports = true
