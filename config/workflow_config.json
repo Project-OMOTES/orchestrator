@@ -27,18 +27,17 @@
       },
       {
         "parameter_type": "datetime",
-        "key_name": "start_time"
+        "key_name": "start_time",
+        "constraints": [
+          {
+            "other_key_name": "end_time",
+            "relation": "smaller"
+          }
+        ]
       },
       {
         "parameter_type": "datetime",
         "key_name": "end_time"
-      }
-    ],
-    "parameter_relations": [
-      {
-        "key_1": "start_time",
-        "key_2": "end_time",
-        "relation": "smaller"
       }
     ]
   }
