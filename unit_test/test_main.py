@@ -297,7 +297,12 @@ class OrchestratorTest(unittest.TestCase):
         life_cycle_barrier_manager_obj_mock.ensure_barrier.assert_called_once_with(job_id)
         life_cycle_barrier_manager_obj_mock.set_barrier.assert_called_once_with(job_id)
         celery_if.start_workflow.assert_called_once_with(
-            job.workflow_type, job.id, None, job_submission.esdl, expected_params_dict, expected_job_priority
+            job.workflow_type,
+            job.id,
+            None,
+            job_submission.esdl,
+            expected_params_dict,
+            expected_job_priority,
         )
         postgresql_if.job_exists.assert_called_once_with(job_id)
         postgresql_if.get_job_status.assert_called_once_with(job_id)
