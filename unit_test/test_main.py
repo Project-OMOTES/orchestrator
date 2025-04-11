@@ -223,6 +223,7 @@ class OrchestratorTest(unittest.TestCase):
             workflow_type=workflow_type.workflow_type_name,
             esdl=esdl,
             params_dict=params_dict,
+            job_priority=JobSubmission.JobPriority.MEDIUM,
         )
         job = Job(id=job_id, workflow_type=workflow_type)
         orchestrator.workflow_manager.get_workflow_by_name.return_value = workflow_type
@@ -234,6 +235,7 @@ class OrchestratorTest(unittest.TestCase):
         expected_params_dict = json_format.MessageToDict(job_submission.params_dict)
         expected_celery_id = "celery_id"
         expected_timeout = timedelta(milliseconds=timeout)
+        expected_job_priority = JobSubmission.JobPriority.MEDIUM
 
         life_cycle_barrier_manager_obj_mock.ensure_barrier.assert_called_once_with(job_id)
         life_cycle_barrier_manager_obj_mock.set_barrier.assert_called_once_with(job_id)
@@ -243,6 +245,7 @@ class OrchestratorTest(unittest.TestCase):
             job_submission.job_reference,
             job_submission.esdl,
             expected_params_dict,
+            expected_job_priority,
         )
         postgresql_if.job_exists.assert_called_once_with(job_id)
         postgresql_if.get_job_status.assert_not_called()
@@ -278,6 +281,7 @@ class OrchestratorTest(unittest.TestCase):
             workflow_type=workflow_type.workflow_type_name,
             esdl=esdl,
             params_dict=params_dict,
+            job_priority=JobSubmission.JobPriority.MEDIUM,
         )
         job = Job(id=job_id, workflow_type=workflow_type)
         orchestrator.workflow_manager.get_workflow_by_name.return_value = workflow_type
@@ -288,11 +292,12 @@ class OrchestratorTest(unittest.TestCase):
         # Assert
         expected_params_dict = json_format.MessageToDict(job_submission.params_dict)
         expected_celery_id = "celery_id"
+        expected_job_priority = JobSubmission.JobPriority.MEDIUM
 
         life_cycle_barrier_manager_obj_mock.ensure_barrier.assert_called_once_with(job_id)
         life_cycle_barrier_manager_obj_mock.set_barrier.assert_called_once_with(job_id)
         celery_if.start_workflow.assert_called_once_with(
-            job.workflow_type, job.id, None, job_submission.esdl, expected_params_dict
+            job.workflow_type, job.id, None, job_submission.esdl, expected_params_dict, expected_job_priority
         )
         postgresql_if.job_exists.assert_called_once_with(job_id)
         postgresql_if.get_job_status.assert_called_once_with(job_id)
