@@ -347,13 +347,17 @@ class Orchestrator:
                 job_reference = job_submission.job_reference
 
             self._init_barriers.ensure_barrier(submitted_job_id)
+            if job_submission.workflow_type:
+                job_priority = job_submission.job_priority
+            else:
+                job_priority = JobSubmission.JobPriority.MEDIUM
             celery_task_id = self.celery_if.start_workflow(
                 job.workflow_type,
                 job.id,
                 job_reference,
                 job_submission.esdl,
                 json_format.MessageToDict(job_submission.params_dict),
-                job_priority=job_submission.job_priority,
+                job_priority,
             )
 
             self.postgresql_if.set_job_submitted(job.id, celery_task_id)

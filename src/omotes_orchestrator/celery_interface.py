@@ -70,7 +70,7 @@ class CeleryInterface:
         job_reference: Optional[str],
         input_esdl: str,
         params_dict: dict,
-        job_priority: JobSubmission.JobPriority | int = JobSubmission.JobPriority.LOW,
+        job_priority: JobSubmission.JobPriority | int,
     ) -> str:
         """Start a new workflow.
 
