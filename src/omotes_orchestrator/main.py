@@ -347,7 +347,7 @@ class Orchestrator:
                 job_reference = job_submission.job_reference
 
             self._init_barriers.ensure_barrier(submitted_job_id)
-            if job_submission.workflow_type:
+            if job_submission.HasField("job_priority"):
                 job_priority = job_submission.job_priority
             else:
                 job_priority = JobSubmission.JobPriority.MEDIUM
