@@ -71,6 +71,7 @@ class EsdlTimeSeriesManager:
           `esdl_time_series_info` table entry, and `deactivated_at` is non-`NULL`, and
           `postgres_job_manager_config.job_retention_sec` has passed since `deactivated_at`: remove
           the time series database and the `esdl_time_series_info` table entry
+        Disabled for now the  `esdl_time_series_info` table cleanup
         2. Postgres `esdl_time_series_info` table cleanup
         - if a `esdl_time_series_info` table entry has no 'esdl_id' of a corresponding time series
           data, and postgres_job_manager_config.job_retention_sec` has passed since `registered_at`:
@@ -102,19 +103,20 @@ class EsdlTimeSeriesManager:
                         set_inactive=True,
                     )
 
-            esdl_time_series_info_entries = self.postgresql_if.get_all_esdl_time_series_infos()
-            for esdl_time_series_info in esdl_time_series_info_entries:
-                if self.sql_esdl_time_series_info_is_stale(
-                    esdl_time_series_info,
-                    time_series_db_esdl_ids,
-                    now_time,
-                    self.postgres_job_manager_config.job_retention_sec,
-                ):
-                    LOGGER.info(
-                        "time series manager: delete ESDL time series info for: %s",
-                        esdl_time_series_info.esdl_id,
-                    )
-                    self.postgresql_if.delete_esdl_time_series_info(esdl_time_series_info)
+            # Disabled for now
+            # esdl_time_series_info_entries = self.postgresql_if.get_all_esdl_time_series_infos()
+            # for esdl_time_series_info in esdl_time_series_info_entries:
+            #     if self.sql_esdl_time_series_info_is_stale(
+            #         esdl_time_series_info,
+            #         time_series_db_esdl_ids,
+            #         now_time,
+            #         self.postgres_job_manager_config.job_retention_sec,
+            #     ):
+            #         LOGGER.info(
+            #             "time series manager: delete ESDL time series info for: %s",
+            #             esdl_time_series_info.esdl_id,
+            #         )
+            #         self.postgresql_if.delete_esdl_time_series_info(esdl_time_series_info)
 
             if self._stop_event.is_set():
                 LOGGER.info("Stopped the time series data cleaner gracefully.")
