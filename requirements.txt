@@ -36,6 +36,8 @@ click-repl==0.3.0
     # via celery
 dataclass-binder==0.3.5
     # via orchestrator (pyproject.toml)
+et-xmlfile==2.0.0
+    # via openpyxl
 future-fstrings==1.2.0
     # via pyecore
 greenlet==3.5.3
@@ -44,8 +46,10 @@ idna==3.18
     # via
     #   requests
     #   yarl
-influxdb==5.3.2
-    # via orchestrator (pyproject.toml)
+influxdb==5.3.1
+    # via
+    #   orchestrator (pyproject.toml)
+    #   pyesdl
 kombu==5.6.2
     # via celery
 lxml==6.1.1
@@ -60,8 +64,10 @@ multidict==6.7.1
     # via yarl
 omotes-sdk-protocol==1.2.0
     # via omotes-sdk-python
-omotes-sdk-python==4.3.5
+omotes-sdk-python==4.3.6
     # via orchestrator (pyproject.toml)
+openpyxl==3.1.2
+    # via pyesdl
 ordered-set==4.1.0
     # via pyecore
 packaging==26.2
@@ -76,11 +82,17 @@ propcache==0.5.2
     # via yarl
 protobuf==5.29.6
     # via omotes-sdk-protocol
+psycopg[binary]==3.3.3
+    # via pyesdl
+psycopg-binary==3.3.3
+    # via
+    #   psycopg
+    #   pyesdl
 psycopg2-binary==2.9.12
     # via orchestrator (pyproject.toml)
 pyecore==0.13.2
     # via pyesdl
-pyesdl==26.6.1
+pyesdl[profiles]==26.7
     # via omotes-sdk-python
 python-dateutil==2.9.0.post0
     # via
@@ -108,6 +120,7 @@ typing-extensions==4.16.0
     # via
     #   alembic
     #   omotes-sdk-python
+    #   psycopg
     #   sqlalchemy
 tzdata==2026.3
     # via
