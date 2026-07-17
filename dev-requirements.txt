@@ -63,12 +63,16 @@ click-repl==0.3.0
     # via
     #   -c requirements.txt
     #   celery
-coverage[toml]==7.15.1
+coverage[toml]==7.15.2
     # via pytest-cov
 dataclass-binder==0.3.5
     # via
     #   -c requirements.txt
     #   orchestrator (pyproject.toml)
+et-xmlfile==2.0.0
+    # via
+    #   -c requirements.txt
+    #   openpyxl
 flake8==7.1.1
     # via
     #   flake8-bugbear
@@ -102,10 +106,11 @@ idna==3.18
     #   -c requirements.txt
     #   requests
     #   yarl
-influxdb==5.3.2
+influxdb==5.3.1
     # via
     #   -c requirements.txt
     #   orchestrator (pyproject.toml)
+    #   pyesdl
 iniconfig==2.3.0
     # via pytest
 isort==5.13.2
@@ -148,10 +153,14 @@ omotes-sdk-protocol==1.2.0
     # via
     #   -c requirements.txt
     #   omotes-sdk-python
-omotes-sdk-python==4.3.5
+omotes-sdk-python==4.3.6
     # via
     #   -c requirements.txt
     #   orchestrator (pyproject.toml)
+openpyxl==3.1.2
+    # via
+    #   -c requirements.txt
+    #   pyesdl
 ordered-set==4.1.0
     # via
     #   -c requirements.txt
@@ -187,6 +196,15 @@ protobuf==5.29.6
     # via
     #   -c requirements.txt
     #   omotes-sdk-protocol
+psycopg[binary]==3.3.3
+    # via
+    #   -c requirements.txt
+    #   pyesdl
+psycopg-binary==3.3.3
+    # via
+    #   -c requirements.txt
+    #   psycopg
+    #   pyesdl
 psycopg2-binary==2.9.12
     # via
     #   -c requirements.txt
@@ -199,7 +217,7 @@ pyecore==0.13.2
     # via
     #   -c requirements.txt
     #   pyesdl
-pyesdl==26.6.1
+pyesdl[profiles]==26.7
     # via
     #   -c requirements.txt
     #   omotes-sdk-python
@@ -261,6 +279,7 @@ typing-extensions==4.16.0
     #   alembic
     #   mypy
     #   omotes-sdk-python
+    #   psycopg
     #   sqlalchemy
 tzdata==2026.3
     # via
