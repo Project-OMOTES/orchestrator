@@ -1,116 +1,92 @@
 # Omotes REST API - FastAPI Version
 
-FastAPI+Pydantic REST API for Omotes job management and workflows.
-
-## Project Structure
-
-```
-omotes-rest-fastapi/
-├── src/
-│   └── orchestrator/
-│       ├── __init__.py
-│       ├── main.py              # FastAPI app factory
-│       ├── models.py            # Pydantic models
-│       └── routes/
-│           ├── __init__.py
-│           ├── job.py           # Job management endpoints
-│           └── workflow.py      # Workflow endpoints
-├── pyproject.toml
-├── requirements.txt
-└── README.md
-```
+FastAPI+Pydantic REST API for Omotes workflows and job management using prefect api.
 
 ## Endpoints
 
 ### Job Management (`/job`)
 
-- `POST /job/` - Start a new job
-- `GET /job/` - List all jobs
-- `GET /job/{job_id}` - Get job details
-- `DELETE /job/{job_id}` - Delete a job
-- `GET /job/{job_id}/status` - Get job status
-- `GET /job/{job_id}/result` - Get job result with output ESDL
-- `GET /job/{job_id}/logs` - Get job logs
-- `GET /job/user/{user_name}` - Get all jobs by user
-- `GET /job/project/{project_name}` - Get all jobs by project
+- `POST /job/` - Create and trigger a new job
+- `GET /job/` - List all jobs from Prefect server
+- `GET /job/{job_id}` - Get job details, status and results if available
+- `DELETE /job/{job_id}` - Delete/terminate a job
 
 ### Workflows (`/workflow`)
 
-- `GET /workflow/` - Get the current in-memory workflows list
-- `POST /workflow/` - Post a JSON list and replace the current in-memory workflows list
-- On startup, the app preloads workflows from `WORKFLOW_SETTINGS_FILE` when that env var is set
+- `GET /workflow/` - Get current in-memory workflows list with Prefect versions
+- `POST /workflow/` - Upload and replace workflows in memory
+- On startup, workflows are preloaded from `WORKFLOW_SETTINGS_FILE` (if set)
 
-## Installation
+## Development
 
-```bash
-# Development install with dev dependencies
-pip install -e ".[dev]"
-```
+### Tools
 
-### Production Install
+This project uses:
 
-```bash
-pip install -e .
-```
+- **uv**: Fast Python package manager and resolver. Install via [https://docs.astral.sh/uv/](https://docs.astral.sh/uv/)
+- **just**: Command runner for common tasks (similar to Make). Install via [https://github.com/casey/just](https://github.com/casey/just)
 
-## Running the Application
+### Setup
 
-### Development
+1. Install dependencies:
 
-```bash
-uvicorn orchestrator.main:app --reload --host 0.0.0.0 --port 5000
-```
+   ```bash
+   uv sync
+   ```
 
-### Production
+2. Copy `.env.template` to `.env`
 
-```bash
-uvicorn orchestrator.main:app --host 0.0.0.0 --port 5000 --workers 4
-```
+### Run/debug the orchestrator locally
 
-### Docker
+In vscode go to the debug view and run "omotes_orchestrator".
 
-Build:
+The app will start on `http://localhost:9200`
 
-```bash
-docker build -t omotes-rest-fastapi:latest .
-```
+You can try out `POST /job/` on `http://localhost:9200/docs` with the omotes_system stack up (without the orchestrator) and use `config/job_post.json`.
 
-Run:
+**Note** to use local code for sdk run `uv pip install -e ../omotes-sdk-python/` before starting the app
+
+### Lint/typecheck/test locally
+
+Run via just (also used in in github actions):
 
 ```bash
-docker run -p 5000:5000 omotes-rest-fastapi:latest
+just ci            # run all CI checks (lint, format-check, typecheck, test)
+
+just lint          # ruff checks
+just format        # ruff format
+just format-check  # verify formatting
+just typecheck     # ty type checking
+just test          # pytest
 ```
 
-## Testing
+To debug test go to the debug view in vscode and run "pytest".
 
-```bash
-pytest tests/
+## Project Structure
+
 ```
-
-With coverage:
-
-```bash
-pytest --cov=orchestrator tests/
+orchestrator/
+├── src/
+│   └── orchestrator/
+│       ├── __init__.py
+│       ├── main.py              # FastAPI app factory, lifespan, exception handling
+│       ├── models.py            # Pydantic response models (JobSummary, WorkflowResponse, etc.)
+│       ├── settings.py          # Environment configuration (Pydantic BaseSettings)
+│       ├── workflow_types.py    # Workflow domain models (WorkflowType, WorkflowUpload)
+│       ├── workflow_registry.py # In-memory workflow state management
+│       └── routes/
+│           ├── __init__.py
+│           ├── job.py           # Job management endpoints (/job)
+│           └── workflow.py      # Workflow endpoints (/workflow)
+├── tests/
+│   ├── conftest.py              # Pytest configuration and fixtures
+│   ├── test_job_routes.py       # Unit tests for job endpoints
+│   └── test_workflow_routes.py  # Unit tests for workflow endpoints
+├── config/
+│   ├── workflow_config_nwn_no_gurobi.json  # Example workflow definitions
+│   └── *.json                   # Job feedback/status files
+├── Dockerfile                   # Multi-stage production image
+├── justfile                     # Task runner commands
+├── pyproject.toml               # Dependencies and project metadata
+└── README.md
 ```
-
-## API Documentation
-
-Once running, visit:
-
-- Interactive API docs: http://localhost:5000/docs
-- Alternative API docs: http://localhost:5000/redoc
-
-## Status
-
-🚧 **Work in Progress** - This is a new FastAPI version of the Omotes REST API.
-Currently implements endpoint signatures. Business logic (TODO) to be implemented step by step.
-
-## Next Steps
-
-- [ ] Implement job submission logic
-- [ ] Implement database integration
-- [ ] Implement job status tracking
-- [x] Implement workflow retrieval
-- [ ] Add authentication/authorization
-- [ ] Add comprehensive error handling
-- [ ] Add request logging and monitoring
