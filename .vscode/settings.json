@@ -1,8 +1,42 @@
 {
-  "python.analysis.typeCheckingMode": "basic",
+  "flake8.enabled": false,
   "[python]": {
-    "editor.defaultFormatter": "ms-python.black-formatter"
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "always",
+      "source.organizeImports.ruff": "explicit"
+    }
   },
-  "python.formatting.provider": "black",
-  "mypy.runUsingActiveInterpreter": true,
+  "python.analysis.typeCheckingMode": "basic",
+  "python.testing.unittestArgs": [
+    "-v",
+    "-s",
+    "./tests",
+    "-p",
+    "test_*.py"
+  ],
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.autoTestDiscoverOnSaveEnabled": true,
+  "isort.args": [
+    "--profile",
+    "black"
+  ],
+  "terminal.integrated.env.windows": {
+    "PYTHONPATH": "${workspaceFolder}/src"
+  },
+  "python.languageServer": "None", // disable Pylance (ruff/ty is used)
+  "ty.diagnosticMode": "workspace",
+  "ty.importStrategy": "fromEnvironment",
+  "ty.interpreter": "${workspaceFolder}/.venv/bin/python",
+  "ruff.organizeImports": true,
+  "ruff.lint.enable": true,
+  "[just]": {
+    "editor.formatOnSave": false,
+    "editor.defaultFormatter": null
+  },
+  "files.associations": {
+    "justfile": "just",
+    "*.just": "just"
+  }
 }

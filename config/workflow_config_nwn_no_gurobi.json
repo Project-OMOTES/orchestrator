@@ -1,0 +1,39 @@
+[
+  {
+    "workflow_type_name": "grow_optimizer_no_heat_losses",
+    "workflow_type_description_name": "Draft Design - Quickscan Validation",
+    "prefect_flow_name": "omotes-optimizer"
+  },
+  {
+    "workflow_type_name": "grow_optimizer_default",
+    "workflow_type_description_name": "Draft Design - Optimization",
+    "prefect_flow_name": "omotes-optimizer"
+  },
+  {
+    "workflow_type_name": "grow_optimizer_eac",
+    "workflow_type_description_name": "Draft Design - Optimization – EAC",
+    "prefect_flow_name": "omotes-optimizer"
+  },
+  {
+    "workflow_type_name": "simulator",
+    "workflow_type_description_name": "Conceptual Design - Simulation",
+    "prefect_flow_name": "omotes-optimizer",
+    "workflow_parameters": [
+      {
+        "parameter_type": "duration",
+        "key_name": "timestep",
+        "description": "Duration of a timestep in seconds.",
+        "minimum": 0,
+        "default": 3600
+      },
+      {
+        "parameter_type": "datetime",
+        "key_name": "start_time"
+      },
+      {
+        "parameter_type": "datetime",
+        "key_name": "end_time"
+      }
+    ]
+  }
+]

@@ -1,16 +1,47 @@
-FROM python:3.11-slim-bookworm
+# BUILD STAGE
+FROM python:3.12-slim AS builder
+
+# Copy uv binaries from the official image into the builder stage
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Set working directory and optimization variables
+WORKDIR /app
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
+
+# Copy dependency definition files to leverage Docker layer caching
+COPY pyproject.toml uv.lock README.md ./
+
+# Install project dependencies into the virtual environment (excluding dev packages)
+RUN uv sync --frozen --no-install-project --no-dev
+
+# Copy application source code
+COPY src/ ./src/
+
+# Install the project itself as an immutable package
+RUN uv sync --frozen --no-dev
+
+# RUN STAGE
+FROM python:3.12-slim
 
 WORKDIR /app
 
+# Enforce secure Python runtime habits
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV APP_PORT=9200
 
-RUN apt update && \
-    apt install -y libpq-dev python3-dev gcc make  # Install dependencies needed for psycopg2
+# Copy only the virtual environment and project code from the builder
+COPY --from=builder /app /app
 
-COPY requirements.txt /app/requirements.txt
-RUN pip install -r /app/requirements.txt --no-cache-dir
+# Prepend the virtual environment binaries to the system PATH
+ENV PATH="/app/.venv/bin:$PATH"
 
-COPY src/ /app/
+# Create a non-root system user for runtime application security
+RUN useradd -u 8888 appuser && chown -R appuser:appuser /app
+USER appuser
 
-ENV PYTHONPATH="/app/"
+EXPOSE 9200
 
-CMD ["/app/start.sh"]
+# Execute using fastapi CLI with production server options
+CMD ["sh", "-c", "fastapi run src/orchestrator/main.py --proxy-headers --port ${APP_PORT} --host 0.0.0.0"]

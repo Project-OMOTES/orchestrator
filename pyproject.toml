@@ -1,138 +1,63 @@
 [project]
 name = "orchestrator"
-dynamic = ["version"]
-authors = [
-    { name = "Sebastiaan la Fleur", email = "sebastiaan.lafleur@tno.nl" },
-    { name = "Mark Vrijlandt", email = "mark.vrijlandt@tno.nl" },
-]
-description = "Orchestrator component of OMOTES project which monitors workflows and starts the various steps of each workflow."
+version = "1.0.0"
+description = "FastAPI-based REST API for Omotes job management"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Omotes", email = "info@omotes.nl" }]
+keywords = ["omotes", "orchestrator", "rest", "api", "fastapi", "pydantic"]
 classifiers = [
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
-    "Operating System :: OS Independent",
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "Intended Audience :: Science/Research",
-    "Intended Audience :: Information Technology",
-    "Topic :: Scientific/Engineering",
-    "Topic :: Scientific/Engineering :: Mathematics",
-    "Topic :: Scientific/Engineering :: Physics",
+    "Programming Language :: Python :: 3.12",
 ]
-readme = "README.md"
-license = {file = "LICENSE"}
-requires-python = ">=3.10"
+
 
 dependencies = [
-    "python-dotenv ~= 1.0.0",
-    "dataclass-binder ~= 0.3.4",
-    "sqlalchemy ~= 2.0.27",
-    "psycopg2-binary ~= 2.9.9",
-    "celery ~= 5.3.6",
-    "omotes-sdk-python ~= 4.3.6",
-    "alembic ~= 1.13.1",
-    "influxdb ~= 5.3.1",
+    "fastapi[standard]>=0.104.0",
+    "omotes-sdk-python==5.0.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "uvicorn>=0.24.0",
+    "python-multipart>=0.0.6",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
-    "setuptools ~= 75.6.0",
-    "wheel ~= 0.45.1",
-    "setuptools-git-versioning >= 2.0, < 3",
-    "black ~= 24.10.0",
-    "flake8 == 7.1.1",
-    "flake8-pyproject ~= 1.2.3",
-    "flake8-docstrings ~= 1.7.0",
-    "flake8-quotes ~= 3.4.0",
-    "flake8-bugbear ~= 24.10.31",
-    "flake8-mock ~= 0.4",
-    "flake8-tuple ~= 0.4.1",
-    "pytest ~= 8.3.4",
-    "pytest-cov ~= 6.0.0",
-    "mypy ~= 1.13.0",
-    "isort == 5.13.2",
-    "build ~= 1.2.2",
-    "sqlalchemy[mypy]",
-    "types-protobuf ~= 4.24.0"
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+    "ty>=0.0.1a16",
+    "httpx>=0.24.0",
 ]
 
 [project.urls]
-homepage = "https://www.nwn.nu"
-documentation = "https://readthedocs.org"
-repository = "https://github.com/Nieuwe-Warmte-Nu/orchestrator"
-changelog = "https://github.com/Nieuwe-Warmte-Nu/orchestrator/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/omotes/orchestrator"
+Repository = "https://github.com/omotes/orchestrator.git"
 
 [build-system]
-build-backend = "setuptools.build_meta"
-requires = [
-    "setuptools ~= 75.6.0",
-    "wheel ~= 0.45.1",
-    "setuptools-git-versioning >= 2.0, < 3",
-]
+requires = ["uv_build>=0.11.29,<0.12"]
+build-backend = "uv_build"
 
-[tools.setuptools]
-packages = ["src/omotes_orchestrator"]
-
-[tool.setuptools-git-versioning]
-enabled = true
-starting_version = "0.0.1"
+[tool.uv.build-backend]
+module-name = "orchestrator"
 
 [tool.pytest.ini_options]
-addopts = """--cov=omotes_orchestrator --cov-report html --cov-report term-missing \
---cov-fail-under 57"""
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "--cov=src --cov-report html --cov-report term-missing --cov-fail-under 50"
+asyncio_mode = "auto"
 
 [tool.coverage.run]
 source = ["src"]
 
-[tool.flake8]
-exclude = ['.venv/*', 'venv/*', 'doc/*']
-ignore = [
-    'Q000', # Remove bad quotes
-    'D401', # Docstring First line should be imperative
-    'E203', # Space before colon (not PEP-8 compliant, and conflicts with black)
-    'C408', # Suggestion to use dict() over {}
-    'W503', # Starting lines with operators.
-    'D104', # Missing docstring in public package
-    'D100'  # Missing docstring in public module
-]
-per-file-ignores = [
-    '__init__.py:F401',
-    './unit_test/*:D100,D101,D102,D103,D106,D107'
-]
-max-line-length = 100
-count = true
+[tool.ruff]
+line-length = 120
+target-version = "py311"
 
-[tool.black]
-line-length = 100
-
-[tool.mypy]
-python_version = "3.11"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-exclude = [
-    '.venv/*',
-    'venv/*',
-    'doc/*',
-    'build',
-    'component',
-    'testscript',
-    'testmodel',
-    'tryouts.py',
-]
-plugins = ['sqlalchemy.ext.mypy.plugin']
-
-# mypy per-module options:
-[[tool.mypy.overrides]]
-module = "unit_test.*"
-check_untyped_defs = true
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "celery.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "influxdb.*"
-ignore_missing_imports = true
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]

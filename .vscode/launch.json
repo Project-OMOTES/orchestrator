@@ -1,0 +1,40 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "omotes orchestrator",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "fastapi",
+      "envFile": "${workspaceFolder}/.env",
+      "args": [
+        "run",
+        "src/orchestrator/main.py",
+        "--proxy-headers",
+        "--port",
+        "9200",
+        "--host",
+        "0.0.0.0"
+      ],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "jinja": true
+    },
+    {
+      "name": "pytest",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "tests",
+        "-q"
+      ],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ]
+}
