@@ -1726,7 +1726,7 @@ wheels = [
 
 [[package]]
 name = "omotes-sdk-python"
-version = "5.0.0"
+version = "5.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "prefect" },
@@ -1734,9 +1734,9 @@ dependencies = [
     { name = "streamcapture" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0f/82/a0b5a820ff336bafded122cf350058711aaeeae4b090ce0665ccd42a5f6c/omotes_sdk_python-5.0.0.tar.gz", hash = "sha256:05b263cbef6cc9f56f0dfc2480a7b2198ef001fc38ba9e8280f93d16cb55ff22", size = 23317, upload-time = "2026-07-24T19:54:19.69Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fa/48/0e2dc6faf0dbe4115f3aa3205fb4252ce30e111cff2403c2daea212301c4/omotes_sdk_python-5.0.1.tar.gz", hash = "sha256:c4dd22943d1cdde29a96f0b6f416e699c56a51abd0f13ec482ff238f36d32535", size = 24840, upload-time = "2026-07-28T15:57:58.87Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/04/b8/9ac87a3c7eb2ec0ca7a850b8a005bf6d71eea996c2b2a7897a9b19f8dbf7/omotes_sdk_python-5.0.0-py3-none-any.whl", hash = "sha256:e18e1b24159e64ccd134c454666e0466f6d754c845c23bf2ff465b987cf01d72", size = 20342, upload-time = "2026-07-24T19:54:18.456Z" },
+    { url = "https://files.pythonhosted.org/packages/19/ea/bdb96e4371ae46171e05615c57c102faa25a946805164d2c560c0715d922/omotes_sdk_python-5.0.1-py3-none-any.whl", hash = "sha256:990affd855439fe01f50a64e1b782f410b718f5d05f2cd233018cae650ecfc4d", size = 21613, upload-time = "2026-07-28T15:57:57.696Z" },
 ]
 
 [[package]]
@@ -1757,6 +1757,7 @@ version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
+    { name = "jsonschema" },
     { name = "omotes-sdk-python" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -1777,7 +1778,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.104.0" },
-    { name = "omotes-sdk-python", specifier = "==5.0.0" },
+    { name = "jsonschema", specifier = ">=4.0" },
+    { name = "omotes-sdk-python", specifier = "==5.0.1" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "python-multipart", specifier = ">=0.0.6" },

@@ -4,7 +4,9 @@ from typing import Any, Optional
 from uuid import UUID
 
 from omotes_sdk.job_status import JobStatus
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from orchestrator.jsonforms import JsonFormsProperties, JsonSchemaObject, validate_jsonforms_properties
 
 
 class WorkflowResponse(BaseModel):
@@ -13,7 +15,8 @@ class WorkflowResponse(BaseModel):
     id: str
     description: str
     versions: list[str] = Field(default_factory=list)
-    workflow_parameters: list[dict[str, Any]] = Field(default_factory=list)
+    schema: JsonSchemaObject | None = None
+    uischema: JsonSchemaObject | None = None
 
 
 class WorkflowUpload(BaseModel):
@@ -22,9 +25,15 @@ class WorkflowUpload(BaseModel):
     workflow_type_name: str
     workflow_type_description_name: str
     prefect_flow_name: str
+    memory_limit: str | None = None
     prefect_flow_version: str | None = None
     versions: list[str] = Field(default_factory=list)
-    workflow_parameters: list[dict[str, Any]] = Field(default_factory=list)
+    workflow_parameters: JsonFormsProperties = Field(default_factory=dict)
+
+    @field_validator("workflow_parameters")
+    @classmethod
+    def _validate_workflow_parameters(cls, value: JsonFormsProperties) -> JsonFormsProperties:
+        return validate_jsonforms_properties(value)
 
 
 class JobInput(BaseModel):

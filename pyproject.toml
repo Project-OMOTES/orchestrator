@@ -17,7 +17,8 @@ classifiers = [
 
 dependencies = [
     "fastapi[standard]>=0.104.0",
-    "omotes-sdk-python==5.0.0",
+    "jsonschema>=4.0",
+    "omotes-sdk-python==5.0.1",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
     "uvicorn>=0.24.0",

@@ -1,6 +1,6 @@
 # Omotes REST API - FastAPI Version
 
-FastAPI+Pydantic REST API for Omotes workflows and job management using prefect api.
+FastAPI+Pydantic REST API for Omotes workflows and job management using prefect.
 
 ## Endpoints
 
@@ -36,15 +36,20 @@ This project uses:
 
 2. Copy `.env.template` to `.env`
 
+The workflows are configured in `WORKFLOW_SETTINGS_FILE`.
+Each workflow contains `workflow_type_name`, `workflow_type_description_name` and `prefect_flow_name`.
+Optional are `workflow_parameters` and `memory_limit` which is for example: `512Mi`, `2Gi`, `750M` or `1000000`.\
+`workflow_parameters` is a dict in jsonforms format, see `/config/workflow_config_example.json` and https://jsonforms.io/.
+
 ### Run/debug the orchestrator locally
 
-In vscode go to the debug view and run "omotes_orchestrator".
+In vscode go to the debug view and run `omotes_orchestrator`.
 
 The app will start on `http://localhost:9200`
 
 You can try out `POST /job/` on `http://localhost:9200/docs` with the omotes_system stack up (without the orchestrator) and use `config/job_post.json`.
 
-**Note** to use local code for sdk run `uv pip install -e ../omotes-sdk-python/` before starting the app
+**Note** to use local code for sdk run `.venv/bin/pip install -e ../omotes-sdk-python/` before starting the app
 
 ### Lint/typecheck/test locally
 
@@ -60,7 +65,8 @@ just typecheck     # ty type checking
 just test          # pytest
 ```
 
-To debug test go to the debug view in vscode and run "pytest".
+To debug test go to the debug view in vscode and run "pytest".\
+When using an editable install of the sdk, don't use the just command as `uv run ...` will remove this editable install.
 
 ## Project Structure
 
@@ -80,7 +86,6 @@ orchestrator/
 │           └── workflow.py      # Workflow endpoints (/workflow)
 ├── tests/
 │   ├── conftest.py              # Pytest configuration and fixtures
-│   ├── test_job_routes.py       # Unit tests for job endpoints
 │   └── test_workflow_routes.py  # Unit tests for workflow endpoints
 ├── config/
 │   ├── workflow_config_nwn_no_gurobi.json  # Example workflow definitions

@@ -7,16 +7,16 @@ import logging
 from typing import cast
 from uuid import UUID
 
-import httpx
 from fastapi import APIRouter, HTTPException
 from omotes_sdk.prefect_util import (
     delete_run,
     from_prefect_state_type_to_job_status,
-    get_client,
     get_flow_run_status_and_results,
+    get_runs,
     trigger_flow_run,
 )
 
+from orchestrator import workflow_registry
 from orchestrator.models import (
     JobDeleteResponse,
     JobInput,
@@ -25,8 +25,6 @@ from orchestrator.models import (
     JobStatusResponse,
     JobSummary,
 )
-from orchestrator.settings import settings
-from orchestrator import workflow_registry
 
 logger = logging.getLogger("orchestrator")
 
@@ -118,35 +116,25 @@ def _get_esdl_feedback(esdl_messages: object) -> list[dict]:
 @router.post("/", response_model=JobStatusResponse)
 async def create_job(job_input: JobInput) -> JobStatusResponse:
     """Start new job: 'input_params_dict' can have lists and (nested) dicts as values."""
-    deployment_base_name = await workflow_registry.get_flow_name(job_input.workflow_type)
+    workflow_definition = await workflow_registry.get_workflow_definition(job_input.workflow_type)
     run_tags: list[str] = []
     if job_input.workflow_type:
         run_tags.append(f"type:{job_input.workflow_type}")
     if job_input.user_name:
         run_tags.append(f"user:{job_input.user_name}")
 
-    try:
-        run_id = await trigger_flow_run(
-            run_name=job_input.job_name,
-            deployment_base_name=deployment_base_name,
-            deployment_version=job_input.version,
-            parameters={
-                "input_esdl": _decode_input_esdl(job_input.input_esdl),
-                "workflow_type_name": job_input.workflow_type,
-                "workflow_config": job_input.input_params_dict,
-            },
-            run_tags=run_tags,
-        )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except httpx.RequestError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                f"Prefect server is unavailable at {settings.prefect_api_url}. "
-                "Start Prefect server or update PREFECT_API_URL, then try again."
-            ),
-        ) from exc
+    run_id = await trigger_flow_run(
+        run_name=job_input.job_name,
+        deployment_base_name=workflow_definition.prefect_flow_name,
+        deployment_version=job_input.version,
+        parameters={
+            "input_esdl": _decode_input_esdl(job_input.input_esdl),
+            "workflow_type_name": job_input.workflow_type,
+            "workflow_config": job_input.input_params_dict,
+        },
+        run_tags=run_tags,
+        memory_limit=workflow_definition.memory_limit,
+    )
 
     logger.info(
         "create_job job_name=%s workflow_type=%s user_name=%s",
@@ -164,18 +152,7 @@ async def create_job(job_input: JobInput) -> JobStatusResponse:
 @router.get("/", response_model=list[JobSummary])
 async def list_jobs() -> list[JobSummary]:
     """Return a summary of all jobs."""
-    try:
-        async with get_client() as client:
-            flow_runs = await client.read_flow_runs()
-    except httpx.RequestError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                f"Prefect server is unavailable at {settings.prefect_api_url}. "
-                "Start Prefect server or update PREFECT_API_URL, then try again."
-            ),
-        ) from exc
-
+    flow_runs = await get_runs()
     jobs: list[JobSummary] = []
     for run in flow_runs:
         if run.state is None:

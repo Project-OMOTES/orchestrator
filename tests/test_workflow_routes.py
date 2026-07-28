@@ -30,7 +30,7 @@ async def _fake_get_flow_versions_by_name(flow_names: list[str]) -> dict[str, li
 
 def test_workflow_upload_replaces_in_memory_list(monkeypatch, client: TestClient) -> None:
     workflow_registry._workflows = []
-    monkeypatch.setattr("orchestrator.routes.workflow.get_flow_versions_by_name", _fake_get_flow_versions_by_name)
+    monkeypatch.setattr("orchestrator.workflow_registry.get_flow_versions_by_name", _fake_get_flow_versions_by_name)
 
     first_payload = [
         {
@@ -44,13 +44,13 @@ def test_workflow_upload_replaces_in_memory_list(monkeypatch, client: TestClient
             "workflow_type_name": "simulator",
             "workflow_type_description_name": "Conceptual Design - Simulation",
             "prefect_flow_name": "simulator",
-            "workflow_parameters": [
-                {
-                    "parameter_type": "duration",
-                    "key_name": "timestep",
+            "workflow_parameters": {
+                "timestep": {
+                    "type": "integer",
                     "default": 3600,
+                    "minimum": 0,
                 }
-            ],
+            },
         }
     ]
 
@@ -70,7 +70,6 @@ def test_workflow_upload_replaces_in_memory_list(monkeypatch, client: TestClient
             "id": "grow_optimizer_default",
             "description": "Draft Design - Optimization",
             "versions": ["0.10.1", "0.10.2"],
-            "workflow_parameters": [],
         }
     ]
 
@@ -85,13 +84,26 @@ def test_workflow_upload_replaces_in_memory_list(monkeypatch, client: TestClient
             "id": "simulator",
             "description": "Conceptual Design - Simulation",
             "versions": ["latest"],
-            "workflow_parameters": [
-                {
-                    "parameter_type": "duration",
-                    "key_name": "timestep",
-                    "default": 3600,
-                }
-            ],
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "timestep": {
+                        "type": "integer",
+                        "default": 3600,
+                        "minimum": 0,
+                    }
+                },
+                "required": ["timestep"],
+            },
+            "uischema": {
+                "type": "VerticalLayout",
+                "elements": [
+                    {
+                        "type": "Control",
+                        "scope": "#/properties/timestep",
+                    }
+                ],
+            },
         }
     ]
 
@@ -103,20 +115,56 @@ def test_workflow_upload_replaces_in_memory_list(monkeypatch, client: TestClient
             "id": "simulator",
             "description": "Conceptual Design - Simulation",
             "versions": ["latest"],
-            "workflow_parameters": [
-                {
-                    "parameter_type": "duration",
-                    "key_name": "timestep",
-                    "default": 3600,
-                }
-            ],
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "timestep": {
+                        "type": "integer",
+                        "default": 3600,
+                        "minimum": 0,
+                    }
+                },
+                "required": ["timestep"],
+            },
+            "uischema": {
+                "type": "VerticalLayout",
+                "elements": [
+                    {
+                        "type": "Control",
+                        "scope": "#/properties/timestep",
+                    }
+                ],
+            },
         }
     ]
 
 
+def test_workflow_upload_rejects_invalid_json_schema_properties(monkeypatch, client: TestClient) -> None:
+    workflow_registry._workflows = []
+    monkeypatch.setattr("orchestrator.workflow_registry.get_flow_versions_by_name", _fake_get_flow_versions_by_name)
+
+    payload = [
+        {
+            "workflow_type_name": "simulator",
+            "workflow_type_description_name": "Conceptual Design - Simulation",
+            "prefect_flow_name": "simulator",
+            "workflow_parameters": {
+                "timestep": {
+                    "type": "duration",
+                    "default": 3600,
+                }
+            },
+        }
+    ]
+
+    response = client.post("/workflow/", json=payload)
+
+    assert response.status_code == 422
+
+
 def test_workflow_settings_file_is_loaded_at_startup(tmp_path, monkeypatch) -> None:
     workflow_registry._workflows = []
-    monkeypatch.setattr("orchestrator.routes.workflow.get_flow_versions_by_name", _fake_get_flow_versions_by_name)
+    monkeypatch.setattr("orchestrator.workflow_registry.get_flow_versions_by_name", _fake_get_flow_versions_by_name)
     workflow_file = tmp_path / "workflows.json"
     workflow_file.write_text(
         json.dumps(
@@ -143,7 +191,6 @@ def test_workflow_settings_file_is_loaded_at_startup(tmp_path, monkeypatch) -> N
             "id": "grow_optimizer_no_heat_losses",
             "description": "Draft Design - Quickscan Validation",
             "versions": ["0.10.1", "0.10.2"],
-            "workflow_parameters": [],
         }
     ]
 
