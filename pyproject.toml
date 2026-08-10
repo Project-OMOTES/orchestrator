@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Physics",
 ]
 readme = "README.md"
-license = {file = "LICENSE"}
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
 
 dependencies = [
@@ -53,7 +53,7 @@ dev = [
     "isort == 5.13.2",
     "build ~= 1.2.2",
     "sqlalchemy[mypy]",
-    "types-protobuf ~= 4.24.0"
+    "types-protobuf ~= 4.24.0",
 ]
 
 [project.urls]
@@ -93,11 +93,11 @@ ignore = [
     'C408', # Suggestion to use dict() over {}
     'W503', # Starting lines with operators.
     'D104', # Missing docstring in public package
-    'D100'  # Missing docstring in public module
+    'D100', # Missing docstring in public module
 ]
 per-file-ignores = [
     '__init__.py:F401',
-    './unit_test/*:D100,D101,D102,D103,D106,D107'
+    './unit_test/*:D100,D101,D102,D103,D106,D107',
 ]
 max-line-length = 100
 count = true

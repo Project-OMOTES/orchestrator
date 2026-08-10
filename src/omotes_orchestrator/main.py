@@ -224,14 +224,7 @@ class Orchestrator:
 
         self.celery_if.start()
 
-        self.worker_if.start()
-        self.worker_if.connect_to_worker_task_results(
-            callback_on_worker_task_result=self.task_result_received
-        )
-        self.worker_if.connect_to_worker_task_progress_updates(
-            callback_on_worker_task_progress_update=self.task_progress_update
-        )
-
+        # Initialize SDK-side broker and exchange before worker callbacks can emit results.
         self.omotes_sdk_if.start()
         self.omotes_sdk_if.connect_to_job_submissions(
             callback_on_new_job=self.new_job_submitted_handler
@@ -244,6 +237,14 @@ class Orchestrator:
             callback_on_request_workflows=self.request_workflows_handler
         )
         self.omotes_sdk_if.send_available_workflows()
+
+        self.worker_if.start()
+        self.worker_if.connect_to_worker_task_results(
+            callback_on_worker_task_result=self.task_result_received
+        )
+        self.worker_if.connect_to_worker_task_progress_updates(
+            callback_on_worker_task_progress_update=self.task_progress_update
+        )
 
         self.postgres_job_manager.start()
         self.timeout_job_manager.start()
@@ -459,12 +460,27 @@ class Orchestrator:
         :param job_id: ID of the job that created this ESDL.
         :param job_reference: Reference of the job that created this ESDL.
         """
-        output_esdl_id = pyesdl_from_string(esdl).energy_system.id
-        self.postgresql_if.put_new_esdl_time_series_info(
-            output_esdl_id=output_esdl_id,
-            job_id=job_id,
-            job_reference=job_reference,
-        )
+        try:
+            output_esdl_id = pyesdl_from_string(esdl).energy_system.id
+            if not isinstance(output_esdl_id, str) or not output_esdl_id:
+                logger.warning(
+                    "Could not guard time series data for job %s: missing or invalid "
+                    "energy system id in output ESDL.",
+                    job_id,
+                )
+                return
+
+            self.postgresql_if.put_new_esdl_time_series_info(
+                output_esdl_id=output_esdl_id,
+                job_id=job_id,
+                job_reference=job_reference,
+            )
+        except Exception:
+            logger.exception(
+                "Could not parse output ESDL to guard time series data for job %s. "
+                "Continuing without guard.",
+                job_id,
+            )
 
     def task_result_received(self, task_result: TaskResult) -> None:
         """When a task result is received from a worker through RabbitMQ, Celery side.
