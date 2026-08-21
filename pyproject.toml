@@ -3,22 +3,24 @@ name = "orchestrator"
 version = "1.0.0"
 description = "FastAPI-based REST API for Omotes job management"
 readme = "README.md"
-requires-python = ">=3.11"
-authors = [{ name = "Omotes", email = "info@omotes.nl" }]
+requires-python = ">=3.12"
+authors = [
+    { name = "Mark Vrijlandt", email = "mark.vrijlandt@tno.nl" },
+    { name = "Cheng-Kai Wang", email = "cheng-kai.wang@tno.nl" },
+    { name = "Sebastiaan la Fleur", email = "sebastiaan.lafleur@tno.nl" }
+]
 keywords = ["omotes", "orchestrator", "rest", "api", "fastapi", "pydantic"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
 ]
 
 
 dependencies = [
     "fastapi[standard]>=0.104.0",
     "jsonschema>=4.0",
-    "omotes-sdk-python==5.0.1",
+    "omotes-sdk-python==5.0.2",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
     "uvicorn>=0.24.0",
@@ -60,5 +62,27 @@ line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "W"]
-ignore = ["E501"]
+select = [
+    "E",   # pycodestyle
+    "W",
+    "F",   # Pyflakes
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "I",   # isort
+    "D",   # pydocstyle
+    "ANN", # flake8-annotations
+    "DOC", # flake8-docstrings
+    "S",   # flake8-bandit
+]
+ignore = [
+    "D100", # Missing docstring in public module
+    "D104", # Missing docstring in public package
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]  # assert statements are standard in tests
+"src/orchestrator/settings.py" = ["S104"]  # 0.0.0.0 is intentional for Docker

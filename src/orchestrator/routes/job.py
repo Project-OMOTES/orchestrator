@@ -1,5 +1,3 @@
-"""Job management endpoints."""
-
 import base64
 import binascii
 import json
@@ -25,6 +23,7 @@ from orchestrator.models import (
     JobStatusResponse,
     JobSummary,
 )
+from orchestrator.settings import settings
 
 logger = logging.getLogger("orchestrator")
 
@@ -137,9 +136,10 @@ async def create_job(job_input: JobInput) -> JobStatusResponse:
     )
 
     logger.info(
-        "create_job job_name=%s workflow_type=%s user_name=%s",
+        "create_job job_name=%s workflow_type=%s workflow_version=%s user_name=%s",
         job_input.job_name,
         job_input.workflow_type,
+        job_input.version,
         job_input.user_name,
     )
 
@@ -183,9 +183,11 @@ async def get_job(job_id: str) -> JobResponse:
     try:
         job_uuid = UUID(job_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid job ID format")
+        raise HTTPException(status_code=400, detail="Invalid job ID format") from None
 
-    run_name, state_type, input_parameters, tags, artifacts, logs = await get_flow_run_status_and_results(job_uuid)
+    run_name, state_type, input_parameters, tags, artifacts, logs = await get_flow_run_status_and_results(
+        job_uuid, settings.minio_host, settings.minio_port, settings.minio_access_key, settings.minio_secret
+    )
     status = from_prefect_state_type_to_job_status(state_type)
 
     if status in _TERMINAL_JOB_STATUSES:
@@ -227,7 +229,7 @@ async def delete_job(job_id: str) -> JobDeleteResponse:
     try:
         job_uuid = UUID(job_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid job ID format")
+        raise HTTPException(status_code=400, detail="Invalid job ID format") from None
 
     deleted = await delete_run(job_uuid)
     if not deleted:

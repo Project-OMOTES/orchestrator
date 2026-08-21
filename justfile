@@ -8,6 +8,10 @@ install:
 lint:
     uv run ruff check ./src ./tests
 
+# Run security checks
+security:
+    uv run ruff check ./src ./tests --select=S
+
 # Fix linting issues
 format:
     uv run ruff format ./src ./tests
@@ -24,8 +28,8 @@ typecheck:
 test:
     uv run pytest --junit-xml=test-results.xml tests/
 
-# Run all checks (install, lint, format-check, typecheck, test)
-ci: install lint format-check typecheck test
+# Run all checks (install, lint, security, format-check, typecheck, test)
+ci: install lint security format-check typecheck test
 
 # Show this help message
 help:

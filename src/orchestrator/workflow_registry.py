@@ -96,7 +96,7 @@ async def get_workflows_jsonforms_format_with_versions() -> list[WorkflowRespons
                 )
 
                 elements: list[dict[str, str]] = []
-                for param_key in workflow_def.workflow_parameters.keys():
+                for param_key in workflow_def.workflow_parameters:
                     elements.append(
                         {
                             "type": "Control",

@@ -1,4 +1,4 @@
-name: Build-Test-Lint-Typecheck
+name: Build-Test-Lint-Security-Typecheck
 
 on: [push]
 
@@ -11,7 +11,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: "3.12"
       - name: Install uv
         uses: astral-sh/setup-uv@v2
       - name: Install just
@@ -23,6 +23,24 @@ jobs:
       - name: Check formatting
         run: just format-check
 
+  security:
+    name: Security Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+      - name: Install just
+        uses: taiki-e/install-action@just
+      - name: Install dependencies
+        run: just install
+      - name: Run security checks
+        run: just security
+
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -31,7 +49,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: "3.12"
       - name: Install uv
         uses: astral-sh/setup-uv@v2
       - name: Install just
@@ -57,7 +75,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: "3.12"
       - name: Install uv
         uses: astral-sh/setup-uv@v2
       - name: Install just

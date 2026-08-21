@@ -1,6 +1,7 @@
 import json
-from collections.abc import Iterator
-from types import SimpleNamespace
+from collections.abc import Iterator, Sequence
+from pathlib import Path
+from types import SimpleNamespace, TracebackType
 from uuid import UUID, uuid4
 
 import pytest
@@ -14,6 +15,7 @@ from orchestrator.main import create_app
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
+    """Create a test client for the application."""
     # Keep TestClient lifecycle explicit so AnyIO portal teardown is deterministic in debug sessions.
     with TestClient(create_app()) as test_client:
         yield test_client
@@ -28,7 +30,8 @@ async def _fake_get_flow_versions_by_name(flow_names: list[str]) -> dict[str, li
     return result
 
 
-def test_workflow_upload_replaces_in_memory_list(monkeypatch, client: TestClient) -> None:
+def test_workflow_upload_replaces_in_memory_list(monkeypatch: pytest.MonkeyPatch, client: TestClient) -> None:
+    """Verify uploading a workflow replaces the in-memory registry."""
     workflow_registry._workflows = []
     monkeypatch.setattr("orchestrator.workflow_registry.get_flow_versions_by_name", _fake_get_flow_versions_by_name)
 
@@ -139,7 +142,10 @@ def test_workflow_upload_replaces_in_memory_list(monkeypatch, client: TestClient
     ]
 
 
-def test_workflow_upload_rejects_invalid_json_schema_properties(monkeypatch, client: TestClient) -> None:
+def test_workflow_upload_rejects_invalid_json_schema_properties(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    """Reject workflow parameters that are not valid JSON Schema properties."""
     workflow_registry._workflows = []
     monkeypatch.setattr("orchestrator.workflow_registry.get_flow_versions_by_name", _fake_get_flow_versions_by_name)
 
@@ -162,7 +168,8 @@ def test_workflow_upload_rejects_invalid_json_schema_properties(monkeypatch, cli
     assert response.status_code == 422
 
 
-def test_workflow_settings_file_is_loaded_at_startup(tmp_path, monkeypatch) -> None:
+def test_workflow_settings_file_is_loaded_at_startup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Load workflow definitions from the configured file during startup."""
     workflow_registry._workflows = []
     monkeypatch.setattr("orchestrator.workflow_registry.get_flow_versions_by_name", _fake_get_flow_versions_by_name)
     workflow_file = tmp_path / "workflows.json"
@@ -196,27 +203,30 @@ def test_workflow_settings_file_is_loaded_at_startup(tmp_path, monkeypatch) -> N
 
 
 class _FakeClientContext:
-    def __init__(self, deployments):
+    def __init__(self, deployments: Sequence[object]) -> None:
         self._deployments = deployments
         self.read_deployments_kwargs = None
         self.create_flow_run_kwargs = None
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "_FakeClientContext":
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
         return None
 
-    async def read_deployments(self, **kwargs):
+    async def read_deployments(self, **kwargs: object) -> Sequence[object]:
         self.read_deployments_kwargs = kwargs
         return self._deployments
 
-    async def create_flow_run_from_deployment(self, **kwargs):
+    async def create_flow_run_from_deployment(self, **kwargs: object) -> SimpleNamespace:
         self.create_flow_run_kwargs = kwargs
         return SimpleNamespace(id=uuid4())
 
 
-async def test_get_flow_versions_by_name_sorted_allows_any_versions(monkeypatch) -> None:
+async def test_get_flow_versions_by_name_sorted_allows_any_versions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Allow and correctly sort arbitrary Prefect deployment versions."""
     deployments = [
         SimpleNamespace(name="grow_optimizer:0.10.1"),
         SimpleNamespace(name="grow_optimizer:local"),
@@ -238,7 +248,10 @@ async def test_get_flow_versions_by_name_sorted_allows_any_versions(monkeypatch)
     }
 
 
-async def test_trigger_flow_run_uses_newest_prefect_version_when_version_missing(monkeypatch) -> None:
+async def test_trigger_flow_run_uses_newest_prefect_flow_version_when_version_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Use the newest deployment version when no version is requested."""
     deployment_id = uuid4()
     deployments = [
         SimpleNamespace(id=uuid4(), name="grow_optimizer:0.10.1"),
@@ -268,7 +281,8 @@ async def test_trigger_flow_run_uses_newest_prefect_version_when_version_missing
     }
 
 
-async def test_trigger_flow_run_raises_when_deployment_missing(monkeypatch) -> None:
+async def test_trigger_flow_run_raises_when_deployment_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Raise a clear error when the requested deployment does not exist."""
     fake_client = _FakeClientContext([])
     monkeypatch.setattr(prefect_util, "get_client", lambda: fake_client)
 

@@ -18,6 +18,7 @@ class WorkflowDefinition:
     memory_limit: MemoryLimit | None = None
 
     def __post_init__(self) -> None:
+        """Validate workflow parameters and normalize the memory limit."""
         self.workflow_parameters = validate_jsonforms_properties(dict(self.workflow_parameters))
         if isinstance(self.memory_limit, str):
             self.memory_limit = MemoryLimit(self.memory_limit)

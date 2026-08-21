@@ -1,6 +1,6 @@
 """Pydantic models for the Omotes REST API."""
 
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 from omotes_sdk.job_status import JobStatus
@@ -15,7 +15,7 @@ class WorkflowResponse(BaseModel):
     id: str
     description: str
     versions: list[str] = Field(default_factory=list)
-    schema: JsonSchemaObject | None = None
+    schema: JsonSchemaObject | None = None  # noqa: A003 - required by downstream services
     uischema: JsonSchemaObject | None = None
 
 
@@ -41,13 +41,10 @@ class JobInput(BaseModel):
 
     job_name: str = Field(default="job name")
     workflow_type: str = Field(default="grow_optimizer_no_heat_losses")
-    version: Optional[str] = Field(default=None)
+    version: str | None = Field(default=None)
     user_name: str = Field(default="user name")
     input_esdl: str = Field(default="input ESDL base64string")
-    project_name: str = Field(default="project name")
     input_params_dict: dict[str, Any] = Field(default_factory=dict)
-    timeout_after_s: int = Field(default=3600)
-    job_priority: Optional[str] = Field(default=None, pattern="^(medium|low|high)?$")
 
 
 class JobStatusResponse(BaseModel):
@@ -82,12 +79,12 @@ class JobResponse(BaseModel):
     status: JobStatus
     user_name: str
     workflow_type: str
-    progress_fraction: Optional[float] = None
-    progress_message: Optional[str] = None
-    input_esdl: Optional[str] = None
-    output_esdl: Optional[str] = None
+    progress_fraction: float | None = None
+    progress_message: str | None = None
+    input_esdl: str | None = None
+    output_esdl: str | None = None
     input_params_dict: dict[str, Any] = Field(default_factory=dict)
     timeout_after_s: int
     logs: str
     esdl_feedback: list[dict]
-    job_priority: Optional[str] = None
+    job_priority: str | None = None

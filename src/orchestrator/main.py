@@ -1,16 +1,15 @@
-"""Main FastAPI application."""
-
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from orchestrator import workflow_registry
 from orchestrator.routes import job, workflow
 from orchestrator.settings import settings
-from orchestrator import workflow_registry
 
 
 def _configure_logging() -> None:
@@ -43,7 +42,7 @@ logger = logging.getLogger("orchestrator")
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage application lifespan."""
     # FastAPI/Uvicorn CLI can reconfigure logging after module import.
     # Re-apply suppression at startup so access logs stay disabled.
@@ -81,9 +80,21 @@ def create_app() -> FastAPI:
 
     # Health check endpoint
     @app.get("/health")
-    async def health_check():
+    async def health_check() -> dict[str, str]:
         """Health check endpoint."""
         return {"status": "ok"}
+
+    # Logging for HTTP exceptions and unhandled exceptions
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+        logger.warning(
+            "HTTP exception status=%s method=%s path=%s detail=%s",
+            exc.status_code,
+            request.method,
+            request.url.path,
+            exc.detail,
+        )
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers)
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
