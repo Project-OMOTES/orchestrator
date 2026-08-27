@@ -11,6 +11,8 @@ from omotes_sdk import prefect_util
 import orchestrator.main as app_main
 from orchestrator import workflow_registry
 from orchestrator.main import create_app
+from orchestrator.routes import job as job_routes
+from orchestrator.workflow_types import WorkflowDefinition
 
 
 @pytest.fixture
@@ -292,3 +294,55 @@ async def test_trigger_flow_run_raises_when_deployment_missing(monkeypatch: pyte
             deployment_base_name="grow_optimizer",
             deployment_version="0.10.2",
         )
+
+
+def test_get_workflows_returns_503_when_prefect_unreachable(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    """Return HTTP 503 when Prefect cannot be reached while listing workflows."""
+
+    async def _raise_prefect_unreachable(_: list[str]) -> dict[str, list[str]]:
+        raise RuntimeError("Prefect server is unavailable at http://prefect:4200/api. Start Prefect server.")
+
+    monkeypatch.setattr(workflow_registry, "get_flow_versions_by_name", _raise_prefect_unreachable)
+
+    response = client.get("/workflow/")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == (
+        "Prefect server is unavailable at http://prefect:4200/api. Start Prefect server."
+    )
+
+
+def test_create_job_returns_404_when_prefect_deployment_unavailable(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    """Return HTTP 404 with a clear message when a Prefect deployment is missing."""
+
+    async def _fake_get_workflow_definition(_: str) -> WorkflowDefinition:
+        return WorkflowDefinition(
+            workflow_type_name="grow_optimizer_default",
+            workflow_type_description_name="Draft Design - Optimization",
+            prefect_flow_name="grow_optimizer",
+        )
+
+    async def _raise_deployment_missing(**_: object) -> UUID:
+        raise RuntimeError("RuntimeError: Prefect deployment 'grow_optimizer:0.10.2' not found for run 'job-123'")
+
+    monkeypatch.setattr(workflow_registry, "get_workflow_definition", _fake_get_workflow_definition)
+    monkeypatch.setattr(job_routes, "trigger_flow_run", _raise_deployment_missing)
+
+    response = client.post(
+        "/job/",
+        json={
+            "job_name": "job-123",
+            "workflow_type": "grow_optimizer_default",
+            "version": "0.10.2",
+            "user_name": "alice",
+            "input_esdl": "aW5wdXQ=",
+            "input_params_dict": {},
+        },
+    )
+
+    assert response.status_code == 404
+    assert "Flow deployment 'grow_optimizer:0.10.2' is not available in Prefect" in response.json()["detail"]

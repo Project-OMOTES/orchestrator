@@ -4,6 +4,10 @@ FastAPI+Pydantic REST API for Omotes workflows and job management using prefect.
 
 ## Endpoints
 
+### Health and readiness
+
+- `GET /health` - Liveness check: returns `200` when the API process is running
+
 ### Job Management (`/job`)
 
 - `POST /job/` - Create and trigger a new job
@@ -56,9 +60,10 @@ You can try out `POST /job/` on `http://localhost:9200/docs` with the omotes_sys
 Run via just (also used in in github actions):
 
 ```bash
-just ci            # run all CI checks (lint, format-check, typecheck, test)
+just ci            # run all CI checks (lint, security, format-check, typecheck, test)
 
 just lint          # ruff checks
+just security      # ruff security
 just format        # ruff format
 just format-check  # verify formatting
 just typecheck     # ty type checking
@@ -76,9 +81,10 @@ orchestrator/
 │   └── orchestrator/
 │       ├── __init__.py
 │       ├── main.py              # FastAPI app factory, lifespan, exception handling
-│       ├── models.py            # Pydantic response models (JobSummary, WorkflowResponse, etc.)
+│       ├── jsonforms.py         # JSON Forms schema validation helpers
+│       ├── models.py            # Pydantic request and response models
 │       ├── settings.py          # Environment configuration (Pydantic BaseSettings)
-│       ├── workflow_types.py    # Workflow domain models (WorkflowType, WorkflowUpload)
+│       ├── workflow_types.py    # Workflow domain models (WorkflowDefinition)
 │       ├── workflow_registry.py # In-memory workflow state management
 │       └── routes/
 │           ├── __init__.py
@@ -86,12 +92,16 @@ orchestrator/
 │           └── workflow.py      # Workflow endpoints (/workflow)
 ├── tests/
 │   ├── conftest.py              # Pytest configuration and fixtures
-│   └── test_workflow_routes.py  # Unit tests for workflow endpoints
+│   └── test_workflow_routes.py  # Unit tests for workflow and job endpoints
 ├── config/
+│   ├── workflow_config_example.json       # Example workflow definitions
 │   ├── workflow_config_nwn_no_gurobi.json  # Example workflow definitions
-│   └── *.json                   # Job feedback/status files
+│   ├── job_post.json                       # Example job request
+│   └── job_post feedback.json              # Example job feedback
 ├── Dockerfile                   # Multi-stage production image
+├── dev.Dockerfile                # Development container image
 ├── justfile                     # Task runner commands
 ├── pyproject.toml               # Dependencies and project metadata
+├── uv.lock                       # Locked Python dependencies
 └── README.md
 ```

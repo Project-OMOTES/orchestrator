@@ -5,6 +5,7 @@ from omotes_sdk import MemoryLimit
 
 from orchestrator import workflow_registry
 from orchestrator.models import WorkflowResponse, WorkflowUpload
+from orchestrator.prefect_errors import raise_for_prefect_runtime_error
 from orchestrator.workflow_types import WorkflowDefinition
 
 logger = logging.getLogger("orchestrator")
@@ -25,7 +26,11 @@ def _to_workflow_type(workflow: WorkflowUpload) -> WorkflowDefinition:
 @router.get("/", response_model=list[WorkflowResponse], response_model_exclude_none=True)
 async def get_workflows() -> list[WorkflowResponse]:
     """Return the current in-memory workflows list."""
-    return await workflow_registry.get_workflows_jsonforms_format_with_versions()
+    try:
+        return await workflow_registry.get_workflows_jsonforms_format_with_versions()
+    except RuntimeError as exc:
+        raise_for_prefect_runtime_error(exc)
+        raise
 
 
 @router.post("/", response_model=list[WorkflowResponse], response_model_exclude_none=True)
@@ -42,4 +47,8 @@ async def upload_workflows(workflows_payload: list[WorkflowUpload]) -> list[Work
         for workflow in workflows_payload
     ]
     await workflow_registry.replace(workflows)
-    return await workflow_registry.get_workflows_jsonforms_format_with_versions()
+    try:
+        return await workflow_registry.get_workflows_jsonforms_format_with_versions()
+    except RuntimeError as exc:
+        raise_for_prefect_runtime_error(exc)
+        raise

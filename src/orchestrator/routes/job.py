@@ -23,6 +23,7 @@ from orchestrator.models import (
     JobStatusResponse,
     JobSummary,
 )
+from orchestrator.prefect_errors import raise_for_prefect_runtime_error
 from orchestrator.settings import settings
 
 logger = logging.getLogger("orchestrator")
@@ -122,18 +123,22 @@ async def create_job(job_input: JobInput) -> JobStatusResponse:
     if job_input.user_name:
         run_tags.append(f"user:{job_input.user_name}")
 
-    run_id = await trigger_flow_run(
-        run_name=job_input.job_name,
-        deployment_base_name=workflow_definition.prefect_flow_name,
-        deployment_version=job_input.version,
-        parameters={
-            "input_esdl": _decode_input_esdl(job_input.input_esdl),
-            "workflow_type_name": job_input.workflow_type,
-            "workflow_config": job_input.input_params_dict,
-        },
-        run_tags=run_tags,
-        memory_limit=workflow_definition.memory_limit,
-    )
+    try:
+        run_id = await trigger_flow_run(
+            run_name=job_input.job_name,
+            deployment_base_name=workflow_definition.prefect_flow_name,
+            deployment_version=job_input.version,
+            parameters={
+                "input_esdl": _decode_input_esdl(job_input.input_esdl),
+                "workflow_type_name": job_input.workflow_type,
+                "workflow_config": job_input.input_params_dict,
+            },
+            run_tags=run_tags,
+            memory_limit=workflow_definition.memory_limit,
+        )
+    except RuntimeError as exc:
+        raise_for_prefect_runtime_error(exc)
+        raise
 
     logger.info(
         "create_job job_name=%s workflow_type=%s workflow_version=%s user_name=%s",
@@ -152,7 +157,11 @@ async def create_job(job_input: JobInput) -> JobStatusResponse:
 @router.get("/", response_model=list[JobSummary])
 async def list_jobs() -> list[JobSummary]:
     """Return a summary of all jobs."""
-    flow_runs = await get_runs()
+    try:
+        flow_runs = await get_runs()
+    except RuntimeError as exc:
+        raise_for_prefect_runtime_error(exc)
+        raise
     jobs: list[JobSummary] = []
     for run in flow_runs:
         if run.state is None:
@@ -185,9 +194,13 @@ async def get_job(job_id: str) -> JobResponse:
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid job ID format") from None
 
-    run_name, state_type, input_parameters, tags, artifacts, logs = await get_flow_run_status_and_results(
-        job_uuid, settings.minio_host, settings.minio_port, settings.minio_access_key, settings.minio_secret
-    )
+    try:
+        run_name, state_type, input_parameters, tags, artifacts, logs = await get_flow_run_status_and_results(
+            job_uuid, settings.minio_host, settings.minio_port, settings.minio_access_key, settings.minio_secret
+        )
+    except RuntimeError as exc:
+        raise_for_prefect_runtime_error(exc)
+        raise
     status = from_prefect_state_type_to_job_status(state_type)
 
     if status in _TERMINAL_JOB_STATUSES:
@@ -231,7 +244,11 @@ async def delete_job(job_id: str) -> JobDeleteResponse:
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid job ID format") from None
 
-    deleted = await delete_run(job_uuid)
+    try:
+        deleted = await delete_run(job_uuid)
+    except RuntimeError as exc:
+        raise_for_prefect_runtime_error(exc)
+        raise
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Unknown job {job_id}")
 

@@ -77,7 +77,7 @@ async def get_workflows_jsonforms_format_with_versions() -> list[WorkflowRespons
         if missing_flow_names:
             raise HTTPException(
                 status_code=404,
-                detail=f"Prefect deployments not found for flow names: {', '.join(missing_flow_names)}",
+                detail=f"Prefect deployments not found for flow name(s): {', '.join(missing_flow_names)}",
             )
 
         workflows_jsonforms: list[WorkflowResponse] = []
