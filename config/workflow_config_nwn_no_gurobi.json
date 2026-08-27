@@ -1,0 +1,42 @@
+[
+  {
+    "workflow_type_name": "grow_optimizer_no_heat_losses",
+    "workflow_type_description_name": "Draft Design - Quickscan Validation",
+    "prefect_flow_name": "omotes-optimizer",
+    "memory_limit": "8Gi"
+  },
+  {
+    "workflow_type_name": "grow_optimizer_default",
+    "workflow_type_description_name": "Draft Design - Optimization",
+    "prefect_flow_name": "omotes-optimizer",
+    "memory_limit": "8Gi"
+  },
+  {
+    "workflow_type_name": "grow_optimizer_eac",
+    "workflow_type_description_name": "Draft Design - Optimization - EAC",
+    "prefect_flow_name": "omotes-optimizer",
+    "memory_limit": "8Gi"
+  },
+  {
+    "workflow_type_name": "simulator",
+    "workflow_type_description_name": "Conceptual Design - Simulation",
+    "prefect_flow_name": "omotes-optimizer",
+    "memory_limit": "8Gi",
+    "workflow_parameters": {
+      "timestep": {
+        "type": "integer",
+        "description": "Duration of a timestep in seconds.",
+        "minimum": 0,
+        "default": 3600
+      },
+      "start_time": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "end_time": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  }
+]

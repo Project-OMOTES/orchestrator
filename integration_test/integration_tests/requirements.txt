@@ -1,4 +1,0 @@
-omotes-sdk-python == 4.3.5
-python-dotenv ~= 1.0.0
-pytest
-psycopg[binary,pool] ~= 3.2.1

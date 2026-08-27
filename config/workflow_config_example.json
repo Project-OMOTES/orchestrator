@@ -1,0 +1,68 @@
+[
+  {
+    "workflow_type_name": "workflow_1",
+    "workflow_type_description_name": "Example workflow without parameters (except the ESDL)."
+  },
+  {
+    "workflow_type_name": "workflow_2",
+    "workflow_type_description_name": "Example workflow with parameters.",
+    "workflow_parameters": {
+      "string_simple": {
+        "type": "string",
+        "title": "Optional, will override the 'capitalized, underscore to space', key_name: Key Name",
+        "description": "Optional description/explanation (will be displayed below the input field).",
+        "default": "Optional default value"
+      },
+      "string_fixed_options": {
+        "type": "string",
+        "title": "Optional, will override the 'capitalized, underscore to space', key_name: Key Name",
+        "description": "Optional description/explanation (will be displayed below the input field).",
+        "default": "Optional default value",
+        "oneOf": [
+          {
+            "const": "key1 (value that will be passed to the workflow if selected)",
+            "title": "Display name 1 (displayed in the dropdown list)"
+          },
+          {
+            "const": "key2",
+            "title": "Display name 2"
+          }
+        ]
+      },
+      "boolean_example": {
+        "type": "boolean",
+        "title": "Optional, will override the 'capitalized, underscore to space', key_name",
+        "description": "Optional description/explanation.",
+        "default": true
+      },
+      "integer_example": {
+        "type": "integer",
+        "title": "This will override the 'capitalized, underscore to space', key_name",
+        "description": "Description/explanation.",
+        "default": 1,
+        "minimum": 0,
+        "maximum": 10
+      },
+      "number_example": {
+        "type": "number",
+        "title": "This will override the 'capitalized, underscore to space', key_name",
+        "description": "Description/explanation.",
+        "default": 1.5,
+        "minimum": 0.0,
+        "maximum": 9.5
+      },
+      "number_example_basic": {
+        "type": "number"
+      },
+      "datetime_example": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "datetime_example_with_default": {
+        "type": "string",
+        "format": "date-time",
+        "default": "2023-12-31T20:00:00"
+      }
+    }
+  }
+]

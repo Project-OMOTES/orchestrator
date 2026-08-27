@@ -1,122 +1,107 @@
-# OMOTES orchestrator
+# Omotes REST API - FastAPI Version
 
-This repository is part of the 'Nieuwe Warmte Nu Design Toolkit' project.
+FastAPI+Pydantic REST API for Omotes workflows and job management using prefect.
 
-Orchestrator component of OMOTES project which monitors workflows and starts the various steps of
-each workflow.
+## Endpoints
 
-# Directory structure
+### Health and readiness
 
-The following directory structure is used:
+- `GET /health` - Liveness check: returns `200` when the API process is running
 
-- `ci/`: Contains all CI & other development scripts to help standardize the development workflow
-  for both Linux and Windows.
-- `omotes-system-at-orchestrator/`: Submodule link to the latest `omotes-system` release.
-  Necessary for infrastructure that is necessary during the integration test.
-- `config/`: Contains orchestrator workflow definitions configuration. The `workflow_config.json`
-  file will be overwritten by a volume mount when deploying via docker.
-- `integration_test/`: Contains a large integration test which is run to check for robustness and
-  stability.
-- `src/`: Source code for the orchestrator as well as the necessary database models.
-- `unit_test/`: All unit tests for the orchestrator.
-- `.dockerignore`: Contains all files and directories which should not be available while building
-  the docker image.
-- `.env.template`: Template `.env` file to run the orchestrator locally outside of docker.
-- `.gitignore`: Contains all files and directories which are not kept in Git source control.
-- `dev-requirements.txt`: Pinned versions of all development and non-development dependencies.
-- `Dockerfile`: The build instructions for building the docker image.
-- `dev.Dockerfile`: Used when running or testing with local code from the `omotes-system`
-  repository.
-- `pyproject.toml`: The Python project (meta) information.
-- `requirements.txt`: Pinned versions of all dependencies needed to run the orchestrator.
-- `run.sh`: Script to start the orchestrator locally outside of docker on Linux.
-- `run_windows.sh`: Script to start the orchestrator locally outside of docker on Windows.
+### Job Management (`/job`)
 
-# Development workflow
+- `POST /job/` - Create and trigger a new job
+- `GET /job/` - List all jobs from Prefect server
+- `GET /job/{job_id}` - Get job details, status and results if available
+- `DELETE /job/{job_id}` - Delete/terminate a job
 
-The scripts under `ci/` are used to standardize the development proces. The following scripts are
-available for Windows (under `ci/win32/` with extension `.cmd`) and Linux (under `ci/linux/` with
-extension `.sh).
+### Workflows (`/workflow`)
 
-- `create_venv`: Creates a local virtual environment (`.venv/`) in which all dependencies may be
-  installed.
-- `db_models_generate_new_revision`: Can be used to generate a new revision of the SQL db schema.
-  Expects 1 argument
-  e.g. `ci/linux/db_models_generate_new_revision.sh "this is the revision message`.
-- `install_dependencies`: Installs all development and non-development dependencies in the local
-  virtual environment.
-- `lint`: Run the `flake8` to check for linting issues.
-- `test_unit`: Run all unit tests under `unit_test/` using `pytest`.
-- `typecheck`: Run `mypy` to check the type annotations and look for typing issues.
-- `update_dependencies`: Update `dev-requirements.txt` and `requirements.txt` based on the
-  dependencies specified in `pyproject.toml`
+- `GET /workflow/` - Get current in-memory workflows list with Prefect versions
+- `POST /workflow/` - Upload and replace workflows in memory
+- On startup, workflows are preloaded from `WORKFLOW_SETTINGS_FILE` (if set)
 
-A typical development workflow would be:
+## Development
 
-1. create and configure `.env` from `.env.template`
-2. run `create_venv`
-3. run `install_dependencies`.
-4. develop or update the codebase according to the requirements...
-5. run `lint`, `test_unit`, and `typecheck` to check for code quality issues.
+### Tools
 
-One of the example development workflows can be that you need to run and develop the orchestrator
-locally (without docker) while having other omotes-system infrastructure
-(e.g. postgres, rabbitmq, workers, etc.) started by dockers. The steps could be:
+This project uses:
 
-1. comment out the `orchestrator` parts in the `docker-compose.yml` file in the `omotes-system`
-   repository.
-2. start omotes-system infrastructure via running `setup` and `start` scripts in
-   the `omotes-system` repository.
-3. run `run.sh` or `run_windows.sh` in the `orchestrator` repository to develop and interact with
-   omotes-system infrastructure.
+- **uv**: Fast Python package manager and resolver. Install via [https://docs.astral.sh/uv/](https://docs.astral.sh/uv/)
+- **just**: Command runner for common tasks (similar to Make). Install via [https://github.com/casey/just](https://github.com/casey/just)
 
-All these scripts are expected to run from the root of the repository
+### Setup
 
-## Working with omotes-system submodule
+1. Install dependencies:
 
-The [omotes-system](https://github.com/Project-OMOTES/omotes-system) is available
-as a submodule at `omotes-system-at-orchestrator`. The name of this path is chosen
-to make sure starting the `omotes-system` with `docker compose` uses the
-`omotes-system-at-orchestrator` project name instead of `omotes-system`. If a developer
-is both developing the `orchestrator` and non-submodule `omotes-system` otherwise the
-environments may conflict in docker.
+   ```bash
+   uv sync
+   ```
 
-To make the submodule available after cloning this repository:
+2. Copy `.env.template` to `.env`
+
+The workflows are configured in `WORKFLOW_SETTINGS_FILE`.
+Each workflow contains `workflow_type_name`, `workflow_type_description_name` and `prefect_flow_name`.
+Optional are `workflow_parameters` and `memory_limit` which is for example: `512Mi`, `2Gi`, `750M` or `1000000`.\
+`workflow_parameters` is a dict in jsonforms format, see `/config/workflow_config_example.json` and https://jsonforms.io/.
+
+### Run/debug the orchestrator locally
+
+In vscode go to the debug view and run `omotes_orchestrator`.
+
+The app will start on `http://localhost:9200`
+
+You can try out `POST /job/` on `http://localhost:9200/docs` with the omotes_system stack up (without the orchestrator) and use `config/job_post.json`.
+
+**Note** to use local code for sdk run `.venv/bin/pip install -e ../omotes-sdk-python/` before starting the app
+
+### Lint/typecheck/test locally
+
+Run via just (also used in in github actions):
 
 ```bash
-git submodule update --init
+just ci            # run all CI checks (lint, security, format-check, typecheck, test)
+
+just lint          # ruff checks
+just security      # ruff security
+just format        # ruff format
+just format-check  # verify formatting
+just typecheck     # ty type checking
+just test          # pytest
 ```
 
-Also, checking out a different branch on `orchestrator` may reference a different commit than
-the branch you are moving from. So, whenever you checkout a new branch, make sure you run
-the command:
+To debug test go to the debug view in vscode and run "pytest".\
+When using an editable install of the sdk, don't use the just command as `uv run ...` will remove this editable install.
 
-```bash
-git submodule update --init
+## Project Structure
+
 ```
-
-This will update the reference to point to the correct submodule commit.
-
-## How to work with alembic to make database revisions
-
-First set up the development environment with `create_venv` and `install_dependencies`. Then you
-can make the necessary changes to `omotes_orchestrator/db_models/`. Finally, a new SQL schema
-revision may be generated using `alembic` by running:
-```bash
-./ci/linux/db_models_generate_new_revision.sh "revision message"
+orchestrator/
+├── src/
+│   └── orchestrator/
+│       ├── __init__.py
+│       ├── main.py              # FastAPI app factory, lifespan, exception handling
+│       ├── jsonforms.py         # JSON Forms schema validation helpers
+│       ├── models.py            # Pydantic request and response models
+│       ├── settings.py          # Environment configuration (Pydantic BaseSettings)
+│       ├── workflow_types.py    # Workflow domain models (WorkflowDefinition)
+│       ├── workflow_registry.py # In-memory workflow state management
+│       └── routes/
+│           ├── __init__.py
+│           ├── job.py           # Job management endpoints (/job)
+│           └── workflow.py      # Workflow endpoints (/workflow)
+├── tests/
+│   ├── conftest.py              # Pytest configuration and fixtures
+│   └── test_workflow_routes.py  # Unit tests for workflow and job endpoints
+├── config/
+│   ├── workflow_config_example.json       # Example workflow definitions
+│   ├── workflow_config_nwn_no_gurobi.json  # Example workflow definitions
+│   ├── job_post.json                       # Example job request
+│   └── job_post feedback.json              # Example job feedback
+├── Dockerfile                   # Multi-stage production image
+├── dev.Dockerfile                # Development container image
+├── justfile                     # Task runner commands
+├── pyproject.toml               # Dependencies and project metadata
+├── uv.lock                       # Locked Python dependencies
+└── README.md
 ```
-
-All database revisions will be automatically applied when the orchestrator is started.
-
-## Direct Alembic control
-
-In case more control is necessary, you can run the necessary alembic commands directly after
-activating the virtual environment (Linux: `. ./.venv/bin/activate`,
-Windows: `call venv\Scripts\activate.bat`).
-
-First, change directory: `cd src/`
-
-- Make a revision: `alembic revision --autogenerate -m "<some message>"`
-- Perform all revisions: `alembic upgrade head`
-- Downgrade to a revision: `alembic downgrade <revision>` (revision 'base' to
-  undo everything.)
