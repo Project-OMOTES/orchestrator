@@ -1,12 +1,16 @@
 import json
+import logging
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from types import SimpleNamespace, TracebackType
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from omotes_sdk import prefect_util
+from prefect.exceptions import ObjectNotFound
+from prefect.states import Cancelled, Running, StateType
 
 import orchestrator.main as app_main
 from orchestrator import workflow_registry
@@ -202,6 +206,165 @@ def test_workflow_settings_file_is_loaded_at_startup(tmp_path: Path, monkeypatch
             "versions": ["0.10.1", "0.10.2"],
         }
     ]
+
+
+def test_get_job_returns_not_found_when_prefect_flow_run_was_deleted(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    """Return 404 instead of leaking Prefect's missing flow run exception."""
+    job_id = uuid4()
+
+    async def raise_missing_flow_run(*_args: object, **_kwargs: object) -> None:
+        raise ObjectNotFound(Exception("Flow run not found"))
+
+    monkeypatch.setattr(job_routes, "get_flow_run_status_and_results", raise_missing_flow_run)
+
+    response = client.get(f"/job/{job_id}")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": f"Unknown job {job_id}"}
+
+
+def test_delete_job_logs_flow_run_metadata(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Log the deleted job's name and identifying tags."""
+    job_id = uuid4()
+
+    class FakeClientContext:
+        async def __aenter__(self) -> "FakeClientContext":
+            return self
+
+        async def __aexit__(
+            self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+        ) -> None:
+            return None
+
+        async def read_flow_run(self, flow_run_id: UUID) -> SimpleNamespace:
+            assert flow_run_id == job_id
+            return SimpleNamespace(
+                name="asset-constraints",
+                tags=["type:grow_optimizer_default", "user:tolga"],
+                state=Cancelled(),
+            )
+
+    async def delete_existing_flow_run(flow_run_id: UUID) -> bool:
+        assert flow_run_id == job_id
+        return True
+
+    monkeypatch.setattr(job_routes, "get_client", lambda: FakeClientContext())
+    monkeypatch.setattr(job_routes, "delete_run", delete_existing_flow_run)
+
+    with caplog.at_level(logging.INFO, logger="orchestrator"):
+        response = client.delete(f"/job/{job_id}")
+
+    assert response.status_code == 200
+    assert (
+        "delete_job status=DELETED job_name=asset-constraints workflow_type=grow_optimizer_default user_name=tolga"
+        in caplog.messages
+    )
+
+
+def test_delete_job_requests_cancellation_for_running_flow(monkeypatch: pytest.MonkeyPatch, client: TestClient) -> None:
+    """Only delete an active flow run after Prefect confirms cancellation."""
+    job_id = uuid4()
+
+    class FakeClientContext:
+        def __init__(self) -> None:
+            self.cancelled_flow_run_id: UUID | None = None
+            self.read_count = 0
+
+        async def __aenter__(self) -> "FakeClientContext":
+            return self
+
+        async def __aexit__(
+            self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+        ) -> None:
+            return None
+
+        async def read_flow_run(self, flow_run_id: UUID) -> SimpleNamespace:
+            assert flow_run_id == job_id
+            self.read_count += 1
+            return SimpleNamespace(name="active-job", tags=[], state=Running() if self.read_count == 1 else Cancelled())
+
+        async def set_flow_run_state(self, flow_run_id: UUID, state: object) -> SimpleNamespace:
+            assert getattr(state, "type", None) == StateType.CANCELLING
+            self.cancelled_flow_run_id = flow_run_id
+            return SimpleNamespace(status=job_routes.SetStateStatus.ACCEPT)
+
+    async def delete_existing_flow_run(_: UUID) -> bool:
+        return True
+
+    fake_client = FakeClientContext()
+    monkeypatch.setattr(job_routes, "get_client", lambda: fake_client)
+    monkeypatch.setattr(job_routes, "delete_run", delete_existing_flow_run)
+
+    response = client.delete(f"/job/{job_id}")
+
+    assert response.status_code == 200
+    assert fake_client.cancelled_flow_run_id == job_id
+
+
+def test_delete_job_keeps_history_when_prefect_rejects_cancellation(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    """Do not delete an active run when Prefect rejects its cancellation request."""
+    job_id = uuid4()
+    delete_called = False
+
+    class FakeClientContext:
+        async def __aenter__(self) -> "FakeClientContext":
+            return self
+
+        async def __aexit__(
+            self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+        ) -> None:
+            return None
+
+        async def read_flow_run(self, _: UUID) -> SimpleNamespace:
+            return SimpleNamespace(name="active-job", tags=[], state=Running())
+
+        async def set_flow_run_state(self, _: UUID, _state: object) -> SimpleNamespace:
+            return SimpleNamespace(status=job_routes.SetStateStatus.REJECT)
+
+    async def delete_existing_flow_run(_: UUID) -> bool:
+        nonlocal delete_called
+        delete_called = True
+        return True
+
+    monkeypatch.setattr(job_routes, "get_client", lambda: FakeClientContext())
+    monkeypatch.setattr(job_routes, "delete_run", delete_existing_flow_run)
+
+    response = client.delete(f"/job/{job_id}")
+
+    assert response.status_code == 409
+    assert not delete_called
+
+
+def test_delete_job_returns_503_when_prefect_metadata_read_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    """Map metadata lookup connectivity failures to the existing upstream error contract."""
+    job_id = uuid4()
+
+    class FailingClientContext:
+        async def __aenter__(self) -> "FailingClientContext":
+            return self
+
+        async def __aexit__(
+            self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+        ) -> None:
+            return None
+
+        async def read_flow_run(self, _: UUID) -> SimpleNamespace:
+            raise httpx.ConnectError("Prefect is unavailable")
+
+    monkeypatch.setattr(job_routes, "get_client", lambda: FailingClientContext())
+
+    response = client.delete(f"/job/{job_id}")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Prefect server is unavailable"}
 
 
 class _FakeClientContext:
