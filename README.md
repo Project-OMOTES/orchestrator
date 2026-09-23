@@ -47,6 +47,11 @@ for example: `512Mi`, `2Gi`, `750M` or `1000000`.\
 `workflow_parameters` is a dict in jsonforms format, see `/config/workflow_config_example.json` and
 https://jsonforms.io/.
 
+To delete resources published by workers, configure the cleanup endpoint credentials in [.env.template](.env.template).
+The host and port must exactly match the resource metadata attached to the Prefect run. Cleanup issues are logged with
+the affected resources; the Prefect run is deleted regardless. PostgreSQL cleanup is limited to UUID-named schemas;
+InfluxDB cleanup is limited to UUID-named databases.
+
 ### Run/debug the orchestrator locally
 
 In vscode go to the debug view and run `omotes_orchestrator`.

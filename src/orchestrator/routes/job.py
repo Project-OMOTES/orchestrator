@@ -9,6 +9,10 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, HTTPException
 from omotes_sdk.prefect_util import (
+    JOB_CLEANUP_RESOURCES_ARTIFACT_KEY,
+    JobCleanupResources,
+    MinioResource,
+    TimeseriesResource,
     delete_run,
     from_prefect_state_type_to_job_status,
     get_flow_run_status_and_results,
@@ -16,9 +20,11 @@ from omotes_sdk.prefect_util import (
     trigger_flow_run,
 )
 from prefect.client.orchestration import get_client
+from prefect.client.schemas.filters import ArtifactFilter, ArtifactFilterFlowRunId
 from prefect.client.schemas.responses import SetStateStatus
 from prefect.exceptions import ObjectNotFound, PrefectHTTPStatusError
 from prefect.states import Cancelling
+from pydantic import ValidationError
 
 from orchestrator import workflow_registry
 from orchestrator.models import (
@@ -30,6 +36,12 @@ from orchestrator.models import (
     JobSummary,
 )
 from orchestrator.prefect_errors import raise_for_prefect_client_error, raise_for_prefect_runtime_error
+from orchestrator.resource_cleanup import (
+    CleanupIssueKind,
+    ResourceCleanupBatchError,
+    ResourceCleanupError,
+    cleanup_resources,
+)
 from orchestrator.settings import settings
 
 logger = logging.getLogger("orchestrator")
@@ -119,8 +131,10 @@ def _get_esdl_feedback(esdl_messages: object) -> list[dict]:
     return esdl_feedback
 
 
-async def _prepare_flow_run_deletion(flow_run_id: UUID) -> tuple[str, str, str]:
-    """Cancel a flow run and wait for Prefect to confirm that it has stopped."""
+async def _prepare_flow_run_deletion(
+    flow_run_id: UUID,
+) -> tuple[str, str, str, list[MinioResource | TimeseriesResource]]:
+    """Cancel a flow run and collect resources to remove before deleting its history."""
     try:
         async with get_client() as client:
             flow_run = await client.read_flow_run(flow_run_id)
@@ -153,13 +167,17 @@ async def _prepare_flow_run_deletion(flow_run_id: UUID) -> tuple[str, str, str]:
                             detail=f"Timed out waiting for job {flow_run_id} to cancel",
                         )
                     await asyncio.sleep(min(settings.cancellation_poll_interval_seconds, remaining_seconds))
-            elif not flow_run.state.is_cancelled():
+            elif not (flow_run.state.is_cancelled() or flow_run.state.is_completed()):
                 raise HTTPException(
                     status_code=409,
                     detail=f"Job {flow_run_id} is already {flow_run.state.type.name} and cannot be cancelled",
                 )
+
+            artifacts = await client.read_artifacts(
+                artifact_filter=ArtifactFilter(flow_run_id=ArtifactFilterFlowRunId(any_=[flow_run_id]))
+            )
     except ObjectNotFound:
-        return "unknown", "unknown", "unknown"
+        return "unknown", "unknown", "unknown", []
     except (PrefectHTTPStatusError, httpx.RequestError) as exc:
         raise_for_prefect_client_error(exc)
         raise
@@ -170,7 +188,24 @@ async def _prepare_flow_run_deletion(flow_run_id: UUID) -> tuple[str, str, str]:
             tag_key, tag_value = tag.split(":", 1)
             tags_by_key[tag_key] = tag_value
 
-    return flow_run.name, tags_by_key.get("type", ""), tags_by_key.get("user", "")
+    cleanup_resource_locations: list[MinioResource | TimeseriesResource] = []
+    for artifact in artifacts:
+        if artifact.key == JOB_CLEANUP_RESOURCES_ARTIFACT_KEY:
+            cleanup_resource_locations.extend(_parse_cleanup_resources_artifact(artifact.data))
+
+    return flow_run.name, tags_by_key.get("type", ""), tags_by_key.get("user", ""), cleanup_resource_locations
+
+
+def _parse_cleanup_resources_artifact(data: object) -> list[MinioResource | TimeseriesResource]:
+    """Parse the single row in a cleanup-resources table artifact."""
+    parsed_data = _parse_artifact_data(data)
+    if isinstance(parsed_data, list) and len(parsed_data) == 1:
+        parsed_data = parsed_data[0]
+
+    try:
+        return JobCleanupResources.model_validate(parsed_data).resources
+    except ValidationError as exc:
+        raise ResourceCleanupError("Invalid job cleanup resources artifact") from exc
 
 
 @router.post("/", response_model=JobStatusResponse)
@@ -300,13 +335,19 @@ async def get_job(job_id: str) -> JobResponse:
 
 @router.delete("/{job_id}", response_model=JobDeleteResponse)
 async def delete_job(job_id: str) -> JobDeleteResponse:
-    """Cancel a job, wait for it to stop, then remove its Prefect history."""
+    """Cancel a job, wait for it to stop, then remove its Prefect run and cleanup associated resources."""
     try:
         job_uuid = UUID(job_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid job ID format") from None
 
-    job_name, workflow_type, user_name = await _prepare_flow_run_deletion(job_uuid)
+    job_name, workflow_type, user_name, resource_locations = await _prepare_flow_run_deletion(job_uuid)
+
+    cleanup_error: ResourceCleanupBatchError | None = None
+    try:
+        cleanup_resources(resource_locations, settings)
+    except ResourceCleanupBatchError as exc:
+        cleanup_error = exc
 
     try:
         deleted = await delete_run(job_uuid)
@@ -314,7 +355,19 @@ async def delete_job(job_id: str) -> JobDeleteResponse:
         raise_for_prefect_runtime_error(exc)
         raise
     if not deleted:
-        raise HTTPException(status_code=404, detail=f"Unknown job {job_id}")
+        raise HTTPException(status_code=404, detail=f"Unknown prefect job '{job_id}'.")
+
+    if cleanup_error is not None:
+        logger.error(
+            "delete_job status=CLEANUP_FAILED job_name=%s workflow_type=%s user_name=%s "
+            "history=DELETED connection_failed=%s delete_failed=%s data_not_found=%s",
+            job_name,
+            workflow_type,
+            user_name,
+            [str(issue) for issue in cleanup_error.failures if issue.kind == CleanupIssueKind.CONNECTION_FAILED],
+            [str(issue) for issue in cleanup_error.failures if issue.kind == CleanupIssueKind.DELETE_FAILED],
+            [str(issue) for issue in cleanup_error.not_found],
+        )
 
     logger.info(
         "delete_job status=DELETED job_name=%s workflow_type=%s user_name=%s",
@@ -322,7 +375,5 @@ async def delete_job(job_id: str) -> JobDeleteResponse:
         workflow_type,
         user_name,
     )
-
-    #  TODO delete time series data if present (db in influxdb and schema in postgres?)
 
     return JobDeleteResponse(job_id=job_uuid, deleted=True)
