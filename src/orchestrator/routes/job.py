@@ -93,6 +93,15 @@ def _parse_artifact_data(data: object) -> object:
         return data
 
 
+def _get_tags_by_key(tags: list[str] | None) -> dict[str, str]:
+    tags_by_key: dict[str, str] = {}
+    for tag in tags or []:
+        if ":" in tag:
+            tag_key, tag_value = tag.split(":", 1)
+            tags_by_key[tag_key] = tag_value
+    return tags_by_key
+
+
 def _get_esdl_feedback(esdl_messages: object) -> list[dict]:
     if not esdl_messages:
         return []
@@ -134,7 +143,12 @@ def _get_esdl_feedback(esdl_messages: object) -> list[dict]:
 async def _prepare_flow_run_deletion(
     flow_run_id: UUID,
 ) -> tuple[str, str, str, list[MinioResource | TimeseriesResource]]:
-    """Cancel a flow run and collect resources to remove before deleting its history."""
+    """Cancel a flow run and collect resources to remove before deleting its history.
+
+    Returns:
+        A tuple containing the flow-run name, workflow type, user name, and cleanup resources.
+        If the flow run is not found, the metadata fields are ``"unknown"`` and the resource list is empty.
+    """
     try:
         async with get_client() as client:
             flow_run = await client.read_flow_run(flow_run_id)
@@ -182,11 +196,7 @@ async def _prepare_flow_run_deletion(
         raise_for_prefect_client_error(exc)
         raise
 
-    tags_by_key: dict[str, str] = {}
-    for tag in flow_run.tags or []:
-        if ":" in tag:
-            tag_key, tag_value = tag.split(":", 1)
-            tags_by_key[tag_key] = tag_value
+    tags_by_key = _get_tags_by_key(flow_run.tags)
 
     cleanup_resource_locations: list[MinioResource | TimeseriesResource] = []
     for artifact in artifacts:
@@ -262,11 +272,7 @@ async def list_jobs() -> list[JobSummary]:
         if run.state is None:
             continue
 
-        tags_by_key: dict[str, str] = {}
-        for tag in run.tags or []:
-            if ":" in tag:
-                tag_key, tag_value = tag.split(":", 1)
-                tags_by_key[tag_key] = tag_value
+        tags_by_key = _get_tags_by_key(run.tags)
 
         jobs.append(
             JobSummary(
@@ -295,6 +301,9 @@ async def get_job(job_id: str) -> JobResponse:
         )
     except ObjectNotFound as exc:
         raise HTTPException(status_code=404, detail=f"Unknown job {job_id}") from exc
+    except (PrefectHTTPStatusError, httpx.RequestError) as exc:
+        raise_for_prefect_client_error(exc)
+        raise
     except RuntimeError as exc:
         raise_for_prefect_runtime_error(exc)
         raise

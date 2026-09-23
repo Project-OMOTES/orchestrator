@@ -7,15 +7,17 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from omotes_sdk import prefect_util
 from omotes_sdk.prefect_util import JOB_CLEANUP_RESOURCES_ARTIFACT_KEY, MinioResource, TimeseriesResource
-from prefect.exceptions import ObjectNotFound
+from prefect.exceptions import ObjectNotFound, PrefectHTTPStatusError
 from prefect.states import Cancelled, Completed, Running, StateType
 
 import orchestrator.main as app_main
 from orchestrator import resource_cleanup, workflow_registry
 from orchestrator.main import create_app
+from orchestrator.prefect_errors import raise_for_prefect_client_error
 from orchestrator.routes import job as job_routes
 from orchestrator.settings import settings
 from orchestrator.workflow_types import WorkflowDefinition
@@ -225,6 +227,21 @@ def test_get_job_returns_not_found_when_prefect_flow_run_was_deleted(
 
     assert response.status_code == 404
     assert response.json() == {"detail": f"Unknown job {job_id}"}
+
+
+def test_prefect_client_404_is_translated_to_not_found() -> None:
+    """Translate a Prefect HTTP 404 into an API 404 instead of a gateway error."""
+    request = httpx.Request("GET", "http://prefect/api/flow_runs/missing")
+    response = httpx.Response(404, request=request, json={"detail": "Flow run not found"})
+    prefect_error = PrefectHTTPStatusError.from_httpx_error(
+        httpx.HTTPStatusError("Prefect returned 404", request=request, response=response)
+    )
+
+    with pytest.raises(HTTPException) as error:
+        raise_for_prefect_client_error(prefect_error)
+
+    assert error.value.status_code == 404
+    assert error.value.detail == "Prefect resource not found"
 
 
 def test_delete_job_logs_flow_run_metadata(

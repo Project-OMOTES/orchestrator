@@ -18,6 +18,9 @@ def raise_for_prefect_client_error(exc: PrefectHTTPStatusError | httpx.RequestEr
     if isinstance(exc, httpx.RequestError):
         raise HTTPException(status_code=503, detail="Prefect server is unavailable") from exc
 
+    if exc.response.status_code == 404:
+        raise HTTPException(status_code=404, detail="Prefect resource not found") from exc
+
     if exc.response.status_code >= 500:
         raise HTTPException(status_code=503, detail="Prefect server is unavailable") from exc
 
