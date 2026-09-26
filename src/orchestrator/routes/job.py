@@ -6,8 +6,7 @@ import logging
 from typing import cast
 from uuid import UUID
 
-import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Response, status
 from omotes_sdk.prefect_util import (
     JOB_CLEANUP_RESOURCES_ARTIFACT_KEY,
     JobCleanupResources,
@@ -22,7 +21,7 @@ from omotes_sdk.prefect_util import (
 from prefect.client.orchestration import get_client
 from prefect.client.schemas.filters import ArtifactFilter, ArtifactFilterFlowRunId
 from prefect.client.schemas.responses import SetStateStatus
-from prefect.exceptions import ObjectNotFound, PrefectHTTPStatusError
+from prefect.exceptions import ObjectNotFound
 from prefect.states import Cancelling
 from pydantic import ValidationError
 
@@ -35,13 +34,8 @@ from orchestrator.models import (
     JobStatusResponse,
     JobSummary,
 )
-from orchestrator.prefect_errors import raise_for_prefect_client_error, raise_for_prefect_runtime_error
-from orchestrator.resource_cleanup import (
-    CleanupIssueKind,
-    ResourceCleanupBatchError,
-    ResourceCleanupError,
-    cleanup_resources,
-)
+from orchestrator.prefect_errors import raise_for_prefect_runtime_error
+from orchestrator.resource_cleanup import cleanup_resources
 from orchestrator.settings import settings
 
 logger = logging.getLogger("orchestrator")
@@ -140,70 +134,118 @@ def _get_esdl_feedback(esdl_messages: object) -> list[dict]:
     return esdl_feedback
 
 
-async def _prepare_flow_run_deletion(
-    flow_run_id: UUID,
-) -> tuple[str, str, str, list[MinioResource | TimeseriesResource]]:
-    """Cancel a flow run and collect resources to remove before deleting its history.
+async def _wait_for_flow_run_cancellation(flow_run_id: UUID) -> bool:
+    """Wait until Prefect reports the flow run as cancelled."""
+    try:
+        async with get_client() as client:
+            while True:
+                flow_run = await client.read_flow_run(flow_run_id)
+                if flow_run.state is not None and flow_run.state.is_cancelled():
+                    return True
+                if flow_run.state is not None and flow_run.state.is_final():
+                    logger.error(
+                        "delete_job cancellation failed job_id=%s: reached %s instead of CANCELLED",
+                        flow_run_id,
+                        flow_run.state.type.name,
+                    )
+                    return False
 
-    Returns:
-        A tuple containing the flow-run name, workflow type, user name, and cleanup resources.
-        If the flow run is not found, the metadata fields are ``"unknown"`` and the resource list is empty.
-    """
+                await asyncio.sleep(settings.cancellation_poll_interval_seconds)
+    except ObjectNotFound:
+        logger.error("delete_job failed job_id=%s: Prefect job was not found", flow_run_id)
+        return False
+    except Exception:
+        logger.exception("delete_job failed while waiting for cancellation job_id=%s", flow_run_id)
+        return False
+
+
+async def _get_stopped_flow_run_metadata(
+    flow_run_id: UUID,
+) -> tuple[str, str, str] | None:
+    """Collect identifying metadata for a stopped flow run."""
     try:
         async with get_client() as client:
             flow_run = await client.read_flow_run(flow_run_id)
             if flow_run.state is None:
-                raise HTTPException(status_code=409, detail=f"Job {flow_run_id} has no Prefect state")
-
+                logger.error("delete_job failed job_id=%s: flow run has no Prefect state", flow_run_id)
+                return None
             if not flow_run.state.is_final():
-                cancellation_result = await client.set_flow_run_state(flow_run_id, Cancelling())
-                if cancellation_result.status != SetStateStatus.ACCEPT:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=f"Prefect did not accept cancellation for job {flow_run_id}",
-                    )
-
-                deadline = asyncio.get_running_loop().time() + settings.cancellation_timeout_seconds
-                while True:
-                    flow_run = await client.read_flow_run(flow_run_id)
-                    if flow_run.state is not None and flow_run.state.is_cancelled():
-                        break
-                    if flow_run.state is not None and flow_run.state.is_final():
-                        raise HTTPException(
-                            status_code=409,
-                            detail=f"Job {flow_run_id} reached {flow_run.state.type.name} instead of CANCELLED",
-                        )
-
-                    remaining_seconds = deadline - asyncio.get_running_loop().time()
-                    if remaining_seconds <= 0:
-                        raise HTTPException(
-                            status_code=504,
-                            detail=f"Timed out waiting for job {flow_run_id} to cancel",
-                        )
-                    await asyncio.sleep(min(settings.cancellation_poll_interval_seconds, remaining_seconds))
-            elif not (flow_run.state.is_cancelled() or flow_run.state.is_completed()):
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Job {flow_run_id} is already {flow_run.state.type.name} and cannot be cancelled",
+                logger.error(
+                    "delete_job failed job_id=%s: flow run is still %s and cannot be deleted yet",
+                    flow_run_id,
+                    flow_run.state.type.name,
                 )
+                return None
+    except ObjectNotFound:
+        logger.error("delete_job failed job_id=%s: Prefect job was not found", flow_run_id)
+        return None
+    except Exception:
+        logger.exception("delete_job failed to read stopped flow run metadata job_id=%s", flow_run_id)
+        return None
 
+    tags_by_key = _get_tags_by_key(flow_run.tags)
+
+    return flow_run.name, tags_by_key.get("type", ""), tags_by_key.get("user", "")
+
+
+async def _get_cleanup_resource_locations(flow_run_id: UUID) -> list[MinioResource | TimeseriesResource] | None:
+    """Collect cleanup resources declared by a flow run."""
+    try:
+        async with get_client() as client:
             artifacts = await client.read_artifacts(
                 artifact_filter=ArtifactFilter(flow_run_id=ArtifactFilterFlowRunId(any_=[flow_run_id]))
             )
     except ObjectNotFound:
-        return "unknown", "unknown", "unknown", []
-    except (PrefectHTTPStatusError, httpx.RequestError) as exc:
-        raise_for_prefect_client_error(exc)
-        raise
-
-    tags_by_key = _get_tags_by_key(flow_run.tags)
+        logger.error("delete_job failed job_id=%s: Prefect job was not found", flow_run_id)
+        return None
+    except Exception:
+        logger.exception("delete_job failed to read cleanup resources job_id=%s", flow_run_id)
+        return []
 
     cleanup_resource_locations: list[MinioResource | TimeseriesResource] = []
     for artifact in artifacts:
         if artifact.key == JOB_CLEANUP_RESOURCES_ARTIFACT_KEY:
             cleanup_resource_locations.extend(_parse_cleanup_resources_artifact(artifact.data))
 
-    return flow_run.name, tags_by_key.get("type", ""), tags_by_key.get("user", ""), cleanup_resource_locations
+    return cleanup_resource_locations
+
+
+async def _delete_flow_run(
+    flow_run_id: UUID,
+    job_name: str,
+    workflow_type: str,
+    user_name: str,
+) -> bool:
+    try:
+        deleted = await delete_run(flow_run_id)
+    except Exception:
+        logger.exception("delete_job failed to delete job_id=%s", flow_run_id)
+        return False
+
+    if not deleted:
+        logger.error("delete_job failed to delete job_id=%s: flow run was not found", flow_run_id)
+        return False
+
+    logger.info(
+        "delete_job status=DELETED job_name=%s workflow_type=%s user_name=%s",
+        job_name,
+        workflow_type,
+        user_name,
+    )
+    return True
+
+
+async def _finish_flow_run_deletion_after_cancellation(flow_run_id: UUID) -> None:
+    try:
+        if not await _wait_for_flow_run_cancellation(flow_run_id):
+            return
+        metadata = await _get_stopped_flow_run_metadata(flow_run_id)
+        if metadata is None:
+            return
+        job_name, workflow_type, user_name = metadata
+        await _delete_flow_run(flow_run_id, job_name, workflow_type, user_name)
+    except Exception:
+        logger.exception("delete_job background deletion failed job_id=%s", flow_run_id)
 
 
 def _parse_cleanup_resources_artifact(data: object) -> list[MinioResource | TimeseriesResource]:
@@ -214,8 +256,9 @@ def _parse_cleanup_resources_artifact(data: object) -> list[MinioResource | Time
 
     try:
         return JobCleanupResources.model_validate(parsed_data).resources
-    except ValidationError as exc:
-        raise ResourceCleanupError("Invalid job cleanup resources artifact") from exc
+    except ValidationError:
+        logger.exception("Invalid job cleanup resources artifact")
+        return []
 
 
 @router.post("/", response_model=JobStatusResponse)
@@ -301,9 +344,6 @@ async def get_job(job_id: str) -> JobResponse:
         )
     except ObjectNotFound as exc:
         raise HTTPException(status_code=404, detail=f"Unknown job {job_id}") from exc
-    except (PrefectHTTPStatusError, httpx.RequestError) as exc:
-        raise_for_prefect_client_error(exc)
-        raise
     except RuntimeError as exc:
         raise_for_prefect_runtime_error(exc)
         raise
@@ -343,46 +383,54 @@ async def get_job(job_id: str) -> JobResponse:
 
 
 @router.delete("/{job_id}", response_model=JobDeleteResponse)
-async def delete_job(job_id: str) -> JobDeleteResponse:
-    """Cancel a job, wait for it to stop, then remove its Prefect run and cleanup associated resources."""
+async def delete_job(job_id: str, background_tasks: BackgroundTasks, response: Response) -> JobDeleteResponse:
+    """Cancel a job and remove its Prefect history once it has stopped."""
     try:
         job_uuid = UUID(job_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid job ID format") from None
-
-    job_name, workflow_type, user_name, resource_locations = await _prepare_flow_run_deletion(job_uuid)
-
-    cleanup_error: ResourceCleanupBatchError | None = None
-    try:
-        cleanup_resources(resource_locations, settings)
-    except ResourceCleanupBatchError as exc:
-        cleanup_error = exc
+        logger.error("delete_job failed: invalid job_id=%s", job_id)
+        return JobDeleteResponse(job_id=None, deleted=False)
 
     try:
-        deleted = await delete_run(job_uuid)
-    except RuntimeError as exc:
-        raise_for_prefect_runtime_error(exc)
-        raise
-    if not deleted:
-        raise HTTPException(status_code=404, detail=f"Unknown prefect job '{job_id}'.")
+        async with get_client() as client:
+            flow_run = await client.read_flow_run(job_uuid)
+            if flow_run.state is None:
+                logger.error("delete_job failed job_id=%s: flow run has no Prefect state", job_uuid)
+                return JobDeleteResponse(job_id=job_uuid, deleted=False)
 
-    if cleanup_error is not None:
-        logger.error(
-            "delete_job status=CLEANUP_FAILED job_name=%s workflow_type=%s user_name=%s "
-            "history=DELETED connection_failed=%s delete_failed=%s data_not_found=%s",
-            job_name,
-            workflow_type,
-            user_name,
-            [str(issue) for issue in cleanup_error.failures if issue.kind == CleanupIssueKind.CONNECTION_FAILED],
-            [str(issue) for issue in cleanup_error.failures if issue.kind == CleanupIssueKind.DELETE_FAILED],
-            [str(issue) for issue in cleanup_error.not_found],
-        )
+            resource_locations = await _get_cleanup_resource_locations(job_uuid)
+            if resource_locations is None:
+                return JobDeleteResponse(job_id=job_uuid, deleted=False)
+            tags_by_key = _get_tags_by_key(flow_run.tags)
 
-    logger.info(
-        "delete_job status=DELETED job_name=%s workflow_type=%s user_name=%s",
-        job_name,
-        workflow_type,
-        user_name,
-    )
+            try:
+                if not flow_run.state.is_final():
+                    cancellation_result = await client.set_flow_run_state(job_uuid, Cancelling())
+                    if cancellation_result.status != SetStateStatus.ACCEPT:
+                        logger.error(
+                            "Prefect did not accept cancellation for job %s status=%s",
+                            job_uuid,
+                            cancellation_result.status,
+                        )
+                        return JobDeleteResponse(job_id=job_uuid, deleted=False)
+                    else:
+                        background_tasks.add_task(_finish_flow_run_deletion_after_cancellation, job_uuid)
+                    response.status_code = status.HTTP_202_ACCEPTED
+                    deleted = False
+                else:
+                    deleted = await _delete_flow_run(
+                        job_uuid,
+                        flow_run.name,
+                        tags_by_key.get("type", ""),
+                        tags_by_key.get("user", ""),
+                    )
+            finally:
+                cleanup_resources(resource_locations, settings)
 
-    return JobDeleteResponse(job_id=job_uuid, deleted=True)
+            return JobDeleteResponse(job_id=job_uuid, deleted=deleted)
+    except ObjectNotFound:
+        logger.error("delete_job failed job_id=%s: Prefect job was not found", job_uuid)
+        return JobDeleteResponse(job_id=job_uuid, deleted=False)
+    except Exception:
+        logger.exception("delete_job failed job_id=%s", job_uuid)
+        return JobDeleteResponse(job_id=job_uuid, deleted=False)
