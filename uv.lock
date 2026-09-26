@@ -1707,7 +1707,7 @@ wheels = [
 
 [[package]]
 name = "omotes-sdk-python"
-version = "5.0.4"
+version = "5.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "prefect" },
@@ -1715,9 +1715,9 @@ dependencies = [
     { name = "streamcapture" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/03/eb/b067c8f84aac11a20fbdfa5e10946654ac2894213e00d174113a88f54c7b/omotes_sdk_python-5.0.4.tar.gz", hash = "sha256:47ff5f310ad85dbeb014291d7e29f23c02b20a29724552fb32bca73ca6ea3bd1", size = 26908, upload-time = "2026-08-28T19:47:17.389Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fc/ea/b1a20b8f47367a84f6f34ac65a71ce461ba4e8dc59168822c42bee7b6611/omotes_sdk_python-5.1.0.tar.gz", hash = "sha256:a963656b323a3668ff3777bc31412ba72d37117eef09bfc781a96d5987a77f6d", size = 28538, upload-time = "2026-09-25T16:40:19.169Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/09/89/c6ca93ac2201ab6e88cf41dc5f22edca155c23199362770650d6927033cc/omotes_sdk_python-5.0.4-py3-none-any.whl", hash = "sha256:8653a33fc5a0f6ef838b496b832a26655ee3de3891852d3d3244f6a2d5501c1b", size = 23044, upload-time = "2026-08-28T19:47:15.759Z" },
+    { url = "https://files.pythonhosted.org/packages/85/f4/b33ddc4644e96754fd513cda03e977e517ddefb5fecff3f321f95fac496b/omotes_sdk_python-5.1.0-py3-none-any.whl", hash = "sha256:3ac932d37d0bc3e00e877b86f7c4f9ce8a8770bb8218843f93d57e162d05cf0a", size = 23691, upload-time = "2026-09-25T16:40:17.952Z" },
 ]
 
 [[package]]
@@ -1765,7 +1765,7 @@ requires-dist = [
     { name = "influxdb", specifier = ">=5.3.1" },
     { name = "jsonschema", specifier = ">=4.0" },
     { name = "minio", specifier = ">=7.2.0" },
-    { name = "omotes-sdk-python", specifier = ">=5.0.4" },
+    { name = "omotes-sdk-python", specifier = ">=5.1.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.0" },

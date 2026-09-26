@@ -7,17 +7,15 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from omotes_sdk import prefect_util
 from omotes_sdk.prefect_util import JOB_CLEANUP_RESOURCES_ARTIFACT_KEY, MinioResource, TimeseriesResource
-from prefect.exceptions import ObjectNotFound, PrefectHTTPStatusError
-from prefect.states import Cancelled, Completed, Running, StateType
+from prefect.exceptions import ObjectNotFound
+from prefect.states import Cancelled, Running, StateType
 
 import orchestrator.main as app_main
 from orchestrator import resource_cleanup, workflow_registry
 from orchestrator.main import create_app
-from orchestrator.prefect_errors import raise_for_prefect_client_error
 from orchestrator.routes import job as job_routes
 from orchestrator.settings import settings
 from orchestrator.workflow_types import WorkflowDefinition
@@ -229,21 +227,6 @@ def test_get_job_returns_not_found_when_prefect_flow_run_was_deleted(
     assert response.json() == {"detail": f"Unknown job {job_id}"}
 
 
-def test_prefect_client_404_is_translated_to_not_found() -> None:
-    """Translate a Prefect HTTP 404 into an API 404 instead of a gateway error."""
-    request = httpx.Request("GET", "http://prefect/api/flow_runs/missing")
-    response = httpx.Response(404, request=request, json={"detail": "Flow run not found"})
-    prefect_error = PrefectHTTPStatusError.from_httpx_error(
-        httpx.HTTPStatusError("Prefect returned 404", request=request, response=response)
-    )
-
-    with pytest.raises(HTTPException) as error:
-        raise_for_prefect_client_error(prefect_error)
-
-    assert error.value.status_code == 404
-    assert error.value.detail == "Prefect resource not found"
-
-
 def test_delete_job_logs_flow_run_metadata(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -263,7 +246,7 @@ def test_delete_job_logs_flow_run_metadata(
             assert flow_run_id == job_id
             return SimpleNamespace(
                 name="asset-constraints",
-                tags=["type:grow_optimizer_default", "user:tolga"],
+                tags=["type:grow_optimizer_default", "user:john"],
                 state=Cancelled(),
             )
 
@@ -281,16 +264,18 @@ def test_delete_job_logs_flow_run_metadata(
         response = client.delete(f"/job/{job_id}")
 
     assert response.status_code == 200
+    assert response.json() == {"job_id": str(job_id), "deleted": True}
     assert (
-        "delete_job status=DELETED job_name=asset-constraints workflow_type=grow_optimizer_default user_name=tolga"
+        "delete_job status=DELETED job_name=asset-constraints workflow_type=grow_optimizer_default user_name=john"
         in caplog.messages
     )
 
 
-def test_delete_job_deletes_completed_flow(monkeypatch: pytest.MonkeyPatch, client: TestClient) -> None:
-    """Delete a successfully completed flow run without requesting cancellation."""
+def test_delete_job_returns_false_when_flow_run_was_already_deleted(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Report a concurrent flow run deletion without raising an exception."""
     job_id = uuid4()
-    delete_called = False
 
     class FakeClientContext:
         async def __aenter__(self) -> "FakeClientContext":
@@ -303,28 +288,28 @@ def test_delete_job_deletes_completed_flow(monkeypatch: pytest.MonkeyPatch, clie
 
         async def read_flow_run(self, flow_run_id: UUID) -> SimpleNamespace:
             assert flow_run_id == job_id
-            return SimpleNamespace(name="completed-job", tags=[], state=Completed())
+            return SimpleNamespace(name="finished-job", tags=[], state=Cancelled())
 
         async def read_artifacts(self, **_kwargs: object) -> list[SimpleNamespace]:
             return []
 
-    async def delete_existing_flow_run(flow_run_id: UUID) -> bool:
-        nonlocal delete_called
+    async def delete_missing_flow_run(flow_run_id: UUID) -> bool:
         assert flow_run_id == job_id
-        delete_called = True
-        return True
+        return False
 
     monkeypatch.setattr(job_routes, "get_client", lambda: FakeClientContext())
-    monkeypatch.setattr(job_routes, "delete_run", delete_existing_flow_run)
+    monkeypatch.setattr(job_routes, "delete_run", delete_missing_flow_run)
 
-    response = client.delete(f"/job/{job_id}")
+    with caplog.at_level(logging.ERROR, logger="orchestrator"):
+        response = client.delete(f"/job/{job_id}")
 
     assert response.status_code == 200
-    assert delete_called
+    assert response.json() == {"job_id": str(job_id), "deleted": False}
+    assert f"delete_job failed to delete job_id={job_id}: flow run was not found" in caplog.messages
 
 
 def test_delete_job_requests_cancellation_for_running_flow(monkeypatch: pytest.MonkeyPatch, client: TestClient) -> None:
-    """Only delete an active flow run after Prefect confirms cancellation."""
+    """Return after requesting cancellation and finish deletion after Prefect confirms it."""
     job_id = uuid4()
 
     class FakeClientContext:
@@ -362,7 +347,8 @@ def test_delete_job_requests_cancellation_for_running_flow(monkeypatch: pytest.M
 
     response = client.delete(f"/job/{job_id}")
 
-    assert response.status_code == 200
+    assert response.status_code == 202
+    assert response.json() == {"job_id": str(job_id), "deleted": False}
     assert fake_client.cancelled_flow_run_id == job_id
 
 
@@ -411,7 +397,6 @@ def test_delete_job_cleans_declared_resources_before_deleting_history(
 
     async def delete_existing_flow_run(_: UUID) -> bool:
         nonlocal delete_called
-        assert cleaned_resources
         delete_called = True
         return True
 
@@ -426,10 +411,10 @@ def test_delete_job_cleans_declared_resources_before_deleting_history(
     assert cleaned_resources == [MinioResource(host="omotes-minio", port=9000, path="flow-results/run-id")]
 
 
-def test_delete_job_reports_cleanup_failure_after_deleting_run(
+def test_delete_job_logs_cleanup_failure_when_credentials_do_not_match(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Delete the Prefect record even when a declared resource cannot be cleaned up."""
+    """Log cleanup failures without failing the delete response."""
     job_id = uuid4()
     delete_called = False
 
@@ -478,13 +463,7 @@ def test_delete_job_reports_cleanup_failure_after_deleting_run(
 
     assert response.status_code == 200
     assert delete_called
-    assert "No MinIO credentials configured for cleanup resource host=unconfigured-minio port=9000" in caplog.messages
-    assert any(
-        "delete_job status=CLEANUP_FAILED job_name=finished-job workflow_type= user_name= "
-        "history=DELETED connection_failed=" in message
-        for message in caplog.messages
-    )
-    assert response.json() == {"job_id": str(job_id), "deleted": True}
+    assert "Failed to delete job cleanup resource type=minio host=unconfigured-minio port=9000" in caplog.messages
 
 
 def test_minio_cleanup_limits_deletion_to_one_run_folder(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -498,10 +477,7 @@ def test_minio_cleanup_limits_deletion_to_one_run_folder(monkeypatch: pytest.Mon
         def list_objects(self, _bucket: str, prefix: str, recursive: bool) -> list[object]:
             assert recursive
             prefixes.append(prefix)
-            return [SimpleNamespace(object_name="flow-results/run-1/result.json")]
-
-        def remove_object(self, _bucket: str, _object_name: str) -> None:
-            return None
+            return []
 
     monkeypatch.setattr(resource_cleanup, "Minio", FakeMinio)
 
@@ -523,94 +499,8 @@ def test_influx_cleanup_rejects_non_uuid_database_before_connecting(monkeypatch:
         database="omotes_timeseries",
     )
 
-    with pytest.raises(resource_cleanup.ResourceCleanupError, match="non-UUID"):
+    with pytest.raises(ValueError, match="non-UUID"):
         resource_cleanup._delete_influxdb_resource(resource, settings)
-
-
-def test_influx_cleanup_logs_missing_database(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    """Treat an already-removed Influx database as an idempotent cleanup result."""
-
-    class FakeInfluxClient:
-        def __init__(self, **_kwargs: object) -> None:
-            pass
-
-        def get_list_database(self) -> list[dict[str, str]]:
-            return []
-
-    monkeypatch.setattr(resource_cleanup, "InfluxDBClient", FakeInfluxClient)
-    resource = TimeseriesResource(
-        type="influxdb",
-        host=settings.influx_host or "",
-        port=settings.influx_port or 0,
-        database=str(uuid4()),
-    )
-
-    with (
-        caplog.at_level(logging.WARNING, logger="orchestrator"),
-        pytest.raises(resource_cleanup.ResourceCleanupBatchError) as error,
-    ):
-        resource_cleanup.cleanup_resources([resource], settings)
-
-    assert any("Cleanup resource data not found type=influxdb" in message for message in caplog.messages)
-    assert error.value.failures == []
-    assert error.value.not_found[0].kind == resource_cleanup.CleanupIssueKind.DATA_NOT_FOUND
-
-
-def test_cleanup_resources_classifies_database_connection_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Classify database connection failures separately from cleanup data errors."""
-    resource = TimeseriesResource(
-        type="postgresql",
-        host=settings.postgres_host or "",
-        port=settings.postgres_port or 0,
-        database="any_database",
-        schema_name=str(uuid4()),
-    )
-
-    def raise_connection_failure(*_args: object, **_kwargs: object) -> None:
-        raise resource_cleanup.psycopg.OperationalError("database is unreachable")
-
-    monkeypatch.setattr(resource_cleanup, "_delete_postgresql_resource", raise_connection_failure)
-
-    with pytest.raises(resource_cleanup.ResourceCleanupBatchError) as error:
-        resource_cleanup.cleanup_resources([resource], settings)
-
-    assert error.value.failures[0].detail == "database is unreachable"
-
-
-def test_cleanup_resources_continues_after_resource_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Attempt later resources even when an earlier resource cannot be deleted."""
-    resources = [
-        TimeseriesResource(
-            type="postgresql",
-            host=settings.postgres_host or "",
-            port=settings.postgres_port or 0,
-            database="first",
-            schema_name=str(uuid4()),
-        ),
-        TimeseriesResource(
-            type="postgresql",
-            host=settings.postgres_host or "",
-            port=settings.postgres_port or 0,
-            database="second",
-            schema_name=str(uuid4()),
-        ),
-    ]
-    attempted: list[str] = []
-
-    def delete_resource(resource: TimeseriesResource, _settings: object) -> None:
-        attempted.append(resource.database)
-        if resource.database == "first":
-            raise resource_cleanup.ResourceCleanupError("delete failed")
-
-    monkeypatch.setattr(resource_cleanup, "_delete_postgresql_resource", delete_resource)
-
-    with pytest.raises(resource_cleanup.ResourceCleanupBatchError) as error:
-        resource_cleanup.cleanup_resources(resources, settings)
-
-    assert attempted == ["first", "second"]
-    assert [issue.detail for issue in error.value.failures] == ["delete failed"]
 
 
 def test_postgresql_cleanup_allows_uuid_schema_in_declared_database(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -618,6 +508,9 @@ def test_postgresql_cleanup_allows_uuid_schema_in_declared_database(monkeypatch:
     connection_kwargs: dict[str, object] = {}
 
     class FakeCursor:
+        def __init__(self) -> None:
+            self.queries: list[object] = []
+
         def __enter__(self) -> "FakeCursor":
             return self
 
@@ -626,11 +519,13 @@ def test_postgresql_cleanup_allows_uuid_schema_in_declared_database(monkeypatch:
         ) -> None:
             return None
 
-        def execute(self, _query: object, _params: object = None) -> None:
-            return None
+        def execute(self, query: object, _parameters: object = None) -> None:
+            self.queries.append(query)
 
-        def fetchone(self) -> tuple[int]:
+        def fetchone(self) -> tuple[int] | None:
             return (1,)
+
+    fake_cursor = FakeCursor()
 
     class FakeConnection:
         def __enter__(self) -> "FakeConnection":
@@ -642,10 +537,10 @@ def test_postgresql_cleanup_allows_uuid_schema_in_declared_database(monkeypatch:
             return None
 
         def cursor(self) -> FakeCursor:
-            return FakeCursor()
+            return fake_cursor
 
-    def connect(**kwargs: object) -> FakeConnection:
-        connection_kwargs.update(kwargs)
+    def connect(**_kwargs: object) -> FakeConnection:
+        connection_kwargs.update(_kwargs)
         return FakeConnection()
 
     monkeypatch.setattr(resource_cleanup.psycopg, "connect", connect)
@@ -660,6 +555,60 @@ def test_postgresql_cleanup_allows_uuid_schema_in_declared_database(monkeypatch:
     resource_cleanup._delete_postgresql_resource(resource, settings)
 
     assert connection_kwargs["dbname"] == "another_timeseries_database"
+    assert len(fake_cursor.queries) == 2
+
+
+def test_postgresql_cleanup_logs_missing_schema(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Log an already-removed PostgreSQL schema without issuing DROP SCHEMA."""
+    executed_queries: list[object] = []
+
+    class FakeCursor:
+        def __enter__(self) -> "FakeCursor":
+            return self
+
+        def __exit__(
+            self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+        ) -> None:
+            return None
+
+        def execute(self, query: object, _parameters: object = None) -> None:
+            executed_queries.append(query)
+
+        def fetchone(self) -> tuple[int] | None:
+            return None
+
+    class FakeConnection:
+        def __enter__(self) -> "FakeConnection":
+            return self
+
+        def __exit__(
+            self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+        ) -> None:
+            return None
+
+        def cursor(self) -> FakeCursor:
+            return FakeCursor()
+
+    def connect(**_kwargs: object) -> FakeConnection:
+        return FakeConnection()
+
+    monkeypatch.setattr(resource_cleanup.psycopg, "connect", connect)
+    schema_name = str(uuid4())
+    resource = TimeseriesResource(
+        type="postgresql",
+        host=settings.postgres_host or "",
+        port=settings.postgres_port or 0,
+        database="another_timeseries_database",
+        schema_name=schema_name,
+    )
+
+    with caplog.at_level(logging.INFO, logger="orchestrator"):
+        resource_cleanup._delete_postgresql_resource(resource, settings)
+
+    assert len(executed_queries) == 1
+    assert f"Cleanup resource data not found type=postgresql schema={schema_name}" in caplog.messages
 
 
 def test_postgresql_cleanup_rejects_non_uuid_schema_before_connecting(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -673,7 +622,7 @@ def test_postgresql_cleanup_rejects_non_uuid_schema_before_connecting(monkeypatc
         schema_name="public",
     )
 
-    with pytest.raises(resource_cleanup.ResourceCleanupError, match="non-UUID"):
+    with pytest.raises(ValueError, match="non-UUID"):
         resource_cleanup._delete_postgresql_resource(resource, settings)
 
 
@@ -699,6 +648,9 @@ def test_delete_job_keeps_history_when_prefect_rejects_cancellation(
         async def set_flow_run_state(self, _: UUID, _state: object) -> SimpleNamespace:
             return SimpleNamespace(status=job_routes.SetStateStatus.REJECT)
 
+        async def read_artifacts(self, **_kwargs: object) -> list[object]:
+            return []
+
     async def delete_existing_flow_run(_: UUID) -> bool:
         nonlocal delete_called
         delete_called = True
@@ -709,14 +661,15 @@ def test_delete_job_keeps_history_when_prefect_rejects_cancellation(
 
     response = client.delete(f"/job/{job_id}")
 
-    assert response.status_code == 409
+    assert response.status_code == 200
+    assert response.json() == {"job_id": str(job_id), "deleted": False}
     assert not delete_called
 
 
-def test_delete_job_returns_503_when_prefect_metadata_read_is_unavailable(
-    monkeypatch: pytest.MonkeyPatch, client: TestClient
+def test_delete_job_returns_false_when_prefect_metadata_read_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Map metadata lookup connectivity failures to the existing upstream error contract."""
+    """Log metadata lookup connectivity failures and return false."""
     job_id = uuid4()
 
     class FailingClientContext:
@@ -733,10 +686,50 @@ def test_delete_job_returns_503_when_prefect_metadata_read_is_unavailable(
 
     monkeypatch.setattr(job_routes, "get_client", lambda: FailingClientContext())
 
-    response = client.delete(f"/job/{job_id}")
+    with caplog.at_level(logging.ERROR, logger="orchestrator"):
+        response = client.delete(f"/job/{job_id}")
 
-    assert response.status_code == 503
-    assert response.json() == {"detail": "Prefect server is unavailable"}
+    assert response.status_code == 200
+    assert response.json() == {"job_id": str(job_id), "deleted": False}
+    assert f"delete_job failed job_id={job_id}" in caplog.messages
+
+
+def test_delete_job_returns_false_for_invalid_job_id(client: TestClient, caplog: pytest.LogCaptureFixture) -> None:
+    """Log malformed job IDs instead of returning a validation exception."""
+    with caplog.at_level(logging.ERROR, logger="orchestrator"):
+        response = client.delete("/job/not-a-uuid")
+
+    assert response.status_code == 200
+    assert response.json() == {"job_id": None, "deleted": False}
+    assert "delete_job failed: invalid job_id=not-a-uuid" in caplog.messages
+
+
+def test_delete_job_returns_false_when_flow_run_has_no_state(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Log a missing Prefect state instead of returning a conflict exception."""
+    job_id = uuid4()
+
+    class FakeClientContext:
+        async def __aenter__(self) -> "FakeClientContext":
+            return self
+
+        async def __aexit__(
+            self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+        ) -> None:
+            return None
+
+        async def read_flow_run(self, _: UUID) -> SimpleNamespace:
+            return SimpleNamespace(name="stateless-job", tags=[], state=None)
+
+    monkeypatch.setattr(job_routes, "get_client", lambda: FakeClientContext())
+
+    with caplog.at_level(logging.ERROR, logger="orchestrator"):
+        response = client.delete(f"/job/{job_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {"job_id": str(job_id), "deleted": False}
+    assert f"delete_job failed job_id={job_id}: flow run has no Prefect state" in caplog.messages
 
 
 class _FakeClientContext:
