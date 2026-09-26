@@ -47,6 +47,22 @@ for example: `512Mi`, `2Gi`, `750M` or `1000000`.\
 `workflow_parameters` is a dict in jsonforms format, see `/config/workflow_config_example.json` and
 https://jsonforms.io/.
 
+To delete resources published by workers, configure credentials for each database from data is to be cleaned up:
+
+```dotenv
+INFLUX_HOST=omotes_influxdb
+INFLUX_PORT=8096
+INFLUX_USERNAME=root
+INFLUX_PASSWORD=...
+POSTGRES_HOST=omotes_postgres
+POSTGRES_PORT=6432
+POSTGRES_USERNAME=omotes_timeseries_rw
+POSTGRES_PASSWORD=...
+```
+
+The host and port must exactly match the resource metadata attached to the Prefect run. PostgreSQL cleanup is
+limited to UUID-named schemas; InfluxDB cleanup is limited to UUID-named databases.
+
 ### Run/debug the orchestrator locally
 
 In vscode go to the debug view and run `omotes_orchestrator`.

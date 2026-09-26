@@ -24,6 +24,16 @@ class Settings(BaseSettings):
     minio_access_key: str
     minio_secret: str
 
+    influx_host: str | None = None
+    influx_port: int | None = None
+    influx_username: str | None = None
+    influx_password: str | None = None
+
+    postgres_host: str | None = None
+    postgres_port: int | None = None
+    postgres_username: str | None = None
+    postgres_password: str | None = None
+
     workflow_settings_file: str | None = None  # can be added later by POST /workflow/
 
     request_timeout_seconds: int = 30
