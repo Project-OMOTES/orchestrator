@@ -18,9 +18,10 @@ classifiers = [
 
 
 dependencies = [
+    "alembic>=1.16.0",
     "fastapi[standard]>=0.104.0",
     "jsonschema>=4.0",
-    "omotes-sdk-python>=5.1.0",
+    "omotes-sdk-python>=5.1.1",
     "influxdb>=5.3.1",
     "minio>=7.2.0",
     "pydantic>=2.0",
@@ -28,6 +29,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "uvicorn>=0.24.0",
     "python-multipart>=0.0.6",
+    "sqlalchemy>=2.0",
 ]
 
 [dependency-groups]

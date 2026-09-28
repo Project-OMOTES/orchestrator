@@ -17,6 +17,8 @@ RUN uv sync --frozen --no-install-project --no-dev
 
 # Copy application source code
 COPY orchestrator/src/ ./src/
+COPY orchestrator/alembic.ini ./
+COPY orchestrator/migrations/ ./migrations/
 
 # Install the project itself as an immutable package
 RUN uv sync --frozen --no-dev
@@ -48,4 +50,4 @@ USER appuser
 EXPOSE 9200
 
 # Execute using fastapi CLI with production server options
-CMD ["sh", "-c", "fastapi run src/orchestrator/main.py --proxy-headers --port ${APP_PORT} --host 0.0.0.0"]
+CMD ["sh", "-c", "exec fastapi run src/orchestrator/main.py --proxy-headers --port \"$APP_PORT\" --host 0.0.0.0"]

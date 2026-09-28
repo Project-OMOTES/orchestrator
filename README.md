@@ -47,23 +47,46 @@ for example: `512Mi`, `2Gi`, `750M` or `1000000`.\
 `workflow_parameters` is a dict in jsonforms format, see `/config/workflow_config_example.json` and
 https://jsonforms.io/.
 
-To delete resources published by workers, configure credentials for each database from data is to be cleaned up:
+Job identity, metadata, last-known status, and cleanup resource locations and states are stored in the orchestrator
+PostgreSQL database:
+
+```dotenv
+ORCHESTRATOR_DATABASE_HOST=localhost
+ORCHESTRATOR_DATABASE_PORT=6432
+ORCHESTRATOR_DATABASE_NAME=omotes_orchestrator
+ORCHESTRATOR_DATABASE_USERNAME=omotes_orchestrator
+ORCHESTRATOR_DATABASE_PASSWORD=...
+```
+
+Configure credentials for each database from which worker-created data is to be cleaned up:
 
 ```dotenv
 INFLUX_HOST=omotes_influxdb
 INFLUX_PORT=8096
 INFLUX_USERNAME=root
 INFLUX_PASSWORD=...
+
 POSTGRES_HOST=omotes_postgres
 POSTGRES_PORT=6432
 POSTGRES_USERNAME=omotes_timeseries_rw
 POSTGRES_PASSWORD=...
 ```
 
-The host and port must exactly match the resource metadata attached to the Prefect run. PostgreSQL cleanup is
-limited to UUID-named schemas; InfluxDB cleanup is limited to UUID-named databases.
+The host and port must exactly match the registered cleanup resource. PostgreSQL cleanup is limited to UUID-named
+schemas; InfluxDB cleanup is limited to UUID-named databases.
 
 ### Run/debug the orchestrator locally
+
+With the PostgreSQL service running, apply pending schema migrations from the orchestrator repository before starting a
+local debug session:
+
+```bash
+.venv/bin/alembic upgrade head
+```
+
+When PostgreSQL runs in the `omotes-system` Docker Compose stack, use `ORCHESTRATOR_DATABASE_HOST=localhost` in the
+local `.env`; containers use `omotes_postgres` instead. Re-run the migration command after pulling revisions that add or
+change migrations.
 
 In vscode go to the debug view and run `omotes_orchestrator`.
 

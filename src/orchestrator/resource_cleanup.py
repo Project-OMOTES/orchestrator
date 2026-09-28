@@ -15,8 +15,9 @@ from orchestrator.settings import Settings
 logger = logging.getLogger("orchestrator")
 
 
-def cleanup_resources(resources: Iterable[MinioResource | TimeseriesResource], settings: Settings) -> None:
+def cleanup_resources(resources: Iterable[MinioResource | TimeseriesResource], settings: Settings) -> bool:
     """Delete all declared resources using credentials for their exact endpoint, logging failures."""
+    succeeded = True
     for resource in resources:
         try:
             if isinstance(resource, MinioResource):
@@ -26,12 +27,14 @@ def cleanup_resources(resources: Iterable[MinioResource | TimeseriesResource], s
             else:
                 _delete_postgresql_resource(resource, settings)
         except Exception:
+            succeeded = False
             logger.exception(
                 "Failed to delete job cleanup resource type=%s host=%s port=%s",
                 resource.type,
                 resource.host,
                 resource.port,
             )
+    return succeeded
 
 
 def _delete_minio_resource(resource: MinioResource, settings: Settings) -> None:

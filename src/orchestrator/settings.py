@@ -34,10 +34,16 @@ class Settings(BaseSettings):
     postgres_username: str | None = None
     postgres_password: str | None = None
 
+    orchestrator_database_host: str = "omotes_postgres"
+    orchestrator_database_port: int = 6432
+    orchestrator_database_name: str = "omotes_orchestrator"
+    orchestrator_database_username: str = "omotes_orchestrator"
+    orchestrator_database_password: str | None = None
+
     workflow_settings_file: str | None = None  # can be added later by POST /workflow/
 
     request_timeout_seconds: int = 30
-    cancellation_timeout_seconds: int = 300
+    cancellation_timeout_seconds: int = 600
     cancellation_poll_interval_seconds: float = 2
 
     @property

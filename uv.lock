@@ -1707,7 +1707,7 @@ wheels = [
 
 [[package]]
 name = "omotes-sdk-python"
-version = "5.1.0"
+version = "5.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "prefect" },
@@ -1715,9 +1715,9 @@ dependencies = [
     { name = "streamcapture" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fc/ea/b1a20b8f47367a84f6f34ac65a71ce461ba4e8dc59168822c42bee7b6611/omotes_sdk_python-5.1.0.tar.gz", hash = "sha256:a963656b323a3668ff3777bc31412ba72d37117eef09bfc781a96d5987a77f6d", size = 28538, upload-time = "2026-09-25T16:40:19.169Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7f/de/2ce4227a5d1c5ad4c2032e1bd9dc19f628786f301fe49ed3377d27af475b/omotes_sdk_python-5.1.1.tar.gz", hash = "sha256:51ba8a18c5c0c789c3d8615ca10553f0ac8b456743c3d3240150780e3fd12aa4", size = 28883, upload-time = "2026-09-28T16:13:49.7Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/85/f4/b33ddc4644e96754fd513cda03e977e517ddefb5fecff3f321f95fac496b/omotes_sdk_python-5.1.0-py3-none-any.whl", hash = "sha256:3ac932d37d0bc3e00e877b86f7c4f9ce8a8770bb8218843f93d57e162d05cf0a", size = 23691, upload-time = "2026-09-25T16:40:17.952Z" },
+    { url = "https://files.pythonhosted.org/packages/1a/d4/81478804581037a27f67aa17e125344d30d348689d954b6d3254629355db/omotes_sdk_python-5.1.1-py3-none-any.whl", hash = "sha256:5b6bb88cf28f65c1ac5e7656696d34c3bd5bad2bac96bee6630e3b1eaffcf2c5", size = 23868, upload-time = "2026-09-28T16:13:48.43Z" },
 ]
 
 [[package]]
@@ -1737,6 +1737,7 @@ name = "orchestrator"
 version = "1.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "alembic" },
     { name = "fastapi", extra = ["standard"] },
     { name = "influxdb" },
     { name = "jsonschema" },
@@ -1746,6 +1747,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-multipart" },
+    { name = "sqlalchemy" },
     { name = "uvicorn" },
 ]
 
@@ -1761,15 +1763,17 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "alembic", specifier = ">=1.16.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.104.0" },
     { name = "influxdb", specifier = ">=5.3.1" },
     { name = "jsonschema", specifier = ">=4.0" },
     { name = "minio", specifier = ">=7.2.0" },
-    { name = "omotes-sdk-python", specifier = ">=5.1.0" },
+    { name = "omotes-sdk-python", specifier = ">=5.1.1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "python-multipart", specifier = ">=0.0.6" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "uvicorn", specifier = ">=0.24.0" },
 ]
 
