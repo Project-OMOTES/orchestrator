@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from orchestrator import workflow_registry
+from orchestrator.database import dispose_database
 from orchestrator.routes import job, workflow
 from orchestrator.settings import settings
 
@@ -53,7 +54,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await workflow_registry.load_from_file(settings.workflow_settings_file)
         except (FileNotFoundError, ValidationError, OSError) as exc:
             raise RuntimeError(f"Failed to load workflow settings from {settings.workflow_settings_file}") from exc
-    yield
+    try:
+        yield
+    finally:
+        await dispose_database()
 
 
 def create_app() -> FastAPI:

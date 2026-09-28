@@ -1,32 +1,28 @@
+import asyncio
 import json
 import logging
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace, TracebackType
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from conftest import InMemoryJobStore
 from fastapi.testclient import TestClient
 from omotes_sdk import prefect_util
-from omotes_sdk.prefect_util import JOB_CLEANUP_RESOURCES_ARTIFACT_KEY, MinioResource, TimeseriesResource
+from omotes_sdk.job_status import JobStatus
+from omotes_sdk.prefect_util import MinioResource, TimeseriesResource
 from prefect.exceptions import ObjectNotFound
 from prefect.states import Cancelled, Running, StateType
 
 import orchestrator.main as app_main
 from orchestrator import resource_cleanup, workflow_registry
+from orchestrator.database import Job, JobCleanupResource
 from orchestrator.main import create_app
 from orchestrator.routes import job as job_routes
 from orchestrator.settings import Settings, settings
 from orchestrator.workflow_types import WorkflowDefinition
-
-
-@pytest.fixture
-def client() -> Iterator[TestClient]:
-    """Create a test client for the application."""
-    # Keep TestClient lifecycle explicit so AnyIO portal teardown is deterministic in debug sessions.
-    with TestClient(create_app()) as test_client:
-        yield test_client
 
 
 async def _fake_get_flow_versions_by_name(flow_names: list[str]) -> dict[str, list[str]]:
@@ -36,6 +32,17 @@ async def _fake_get_flow_versions_by_name(flow_names: list[str]) -> dict[str, li
     if "simulator" in flow_names:
         result["simulator"] = ["latest"]
     return result
+
+
+def _persist_job(job_store: InMemoryJobStore, job_id: UUID, job_name: str = "test-job") -> None:
+    job_store.jobs[job_id] = Job(
+        job_id=job_id,
+        job_name=job_name,
+        workflow_type="test-workflow",
+        workflow_version=None,
+        user_name="test-user",
+        status=JobStatus.ENQUEUED,
+    )
 
 
 def test_workflow_upload_replaces_in_memory_list(monkeypatch: pytest.MonkeyPatch, client: TestClient) -> None:
@@ -213,13 +220,14 @@ def test_workflow_settings_file_is_loaded_at_startup(tmp_path: Path, monkeypatch
 def test_get_job_returns_not_found_when_prefect_flow_run_was_deleted(
     monkeypatch: pytest.MonkeyPatch, client: TestClient
 ) -> None:
-    """Return 404 instead of leaking Prefect's missing flow run exception."""
+    """Reject unknown durable jobs without querying Prefect."""
     job_id = uuid4()
 
-    async def raise_missing_flow_run(*_args: object, **_kwargs: object) -> None:
-        raise ObjectNotFound(Exception("Flow run not found"))
-
-    monkeypatch.setattr(job_routes, "get_flow_run_status_and_results", raise_missing_flow_run)
+    monkeypatch.setattr(
+        job_routes,
+        "get_flow_run_status_and_results",
+        lambda *_args, **_kwargs: pytest.fail("must not query Prefect"),
+    )
 
     response = client.get(f"/job/{job_id}")
 
@@ -227,11 +235,33 @@ def test_get_job_returns_not_found_when_prefect_flow_run_was_deleted(
     assert response.json() == {"detail": f"Unknown job {job_id}"}
 
 
+def test_list_jobs_does_not_import_prefect_only_runs(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, job_store: InMemoryJobStore
+) -> None:
+    """Ignore Prefect runs that are not owned by the durable job store."""
+    prefect_only_job_id = uuid4()
+
+    async def get_prefect_only_run() -> list[SimpleNamespace]:
+        return [SimpleNamespace(id=prefect_only_job_id, name="external", tags=[], state=Running())]
+
+    monkeypatch.setattr(job_routes, "get_runs", get_prefect_only_run)
+
+    response = client.get("/job/")
+
+    assert response.status_code == 200
+    assert response.json() == []
+    assert prefect_only_job_id not in job_store.jobs
+
+
 def test_delete_job_logs_flow_run_metadata(
-    monkeypatch: pytest.MonkeyPatch, client: TestClient, caplog: pytest.LogCaptureFixture
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    job_store: InMemoryJobStore,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Log the deleted job's name and identifying tags."""
     job_id = uuid4()
+    _persist_job(job_store, job_id, "asset-constraints")
 
     class FakeClientContext:
         async def __aenter__(self) -> "FakeClientContext":
@@ -249,9 +279,6 @@ def test_delete_job_logs_flow_run_metadata(
                 tags=["type:grow_optimizer_default", "user:john"],
                 state=Cancelled(),
             )
-
-        async def read_artifacts(self, **_kwargs: object) -> list[SimpleNamespace]:
-            return []
 
     async def delete_existing_flow_run(flow_run_id: UUID) -> bool:
         assert flow_run_id == job_id
@@ -272,10 +299,14 @@ def test_delete_job_logs_flow_run_metadata(
 
 
 def test_delete_job_returns_false_when_flow_run_was_already_deleted(
-    monkeypatch: pytest.MonkeyPatch, client: TestClient, caplog: pytest.LogCaptureFixture
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    job_store: InMemoryJobStore,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Report a concurrent flow run deletion without raising an exception."""
     job_id = uuid4()
+    _persist_job(job_store, job_id, "finished-job")
 
     class FakeClientContext:
         async def __aenter__(self) -> "FakeClientContext":
@@ -289,9 +320,6 @@ def test_delete_job_returns_false_when_flow_run_was_already_deleted(
         async def read_flow_run(self, flow_run_id: UUID) -> SimpleNamespace:
             assert flow_run_id == job_id
             return SimpleNamespace(name="finished-job", tags=[], state=Cancelled())
-
-        async def read_artifacts(self, **_kwargs: object) -> list[SimpleNamespace]:
-            return []
 
     async def delete_missing_flow_run(flow_run_id: UUID) -> bool:
         assert flow_run_id == job_id
@@ -308,9 +336,12 @@ def test_delete_job_returns_false_when_flow_run_was_already_deleted(
     assert f"delete_job failed to delete job_id={job_id}: flow run was not found" in caplog.messages
 
 
-def test_delete_job_requests_cancellation_for_running_flow(monkeypatch: pytest.MonkeyPatch, client: TestClient) -> None:
+def test_delete_job_requests_cancellation_for_running_flow(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, job_store: InMemoryJobStore
+) -> None:
     """Return after requesting cancellation and finish deletion after Prefect confirms it."""
     job_id = uuid4()
+    _persist_job(job_store, job_id, "active-job")
 
     class FakeClientContext:
         def __init__(self) -> None:
@@ -329,9 +360,6 @@ def test_delete_job_requests_cancellation_for_running_flow(monkeypatch: pytest.M
             assert flow_run_id == job_id
             self.read_count += 1
             return SimpleNamespace(name="active-job", tags=[], state=Running() if self.read_count == 1 else Cancelled())
-
-        async def read_artifacts(self, **_kwargs: object) -> list[SimpleNamespace]:
-            return []
 
         async def set_flow_run_state(self, flow_run_id: UUID, state: object) -> SimpleNamespace:
             assert getattr(state, "type", None) == StateType.CANCELLING
@@ -352,13 +380,104 @@ def test_delete_job_requests_cancellation_for_running_flow(monkeypatch: pytest.M
     assert fake_client.cancelled_flow_run_id == job_id
 
 
-def test_delete_job_cleans_declared_resources_before_deleting_history(
-    monkeypatch: pytest.MonkeyPatch, client: TestClient
+def test_delete_job_finishes_cleanup_when_prefect_history_disappears_during_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    job_store: InMemoryJobStore,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Use the worker's cleanup artifact before deleting the Prefect flow run."""
+    """Finish durable cleanup if Prefect history is manually deleted after cancellation."""
     job_id = uuid4()
+    _persist_job(job_store, job_id, "active-job")
+    resource = MinioResource(host="omotes-minio", port=9000, path="flow-results/run-id")
+    resource_key = resource.model_dump_json(by_alias=True)
+    job_store.resources[job_id] = {
+        resource_key: JobCleanupResource(resource_key=resource_key, resource=resource),
+    }
+    cleaned_resources: list[MinioResource] = []
+
+    class FakeClientContext:
+        def __init__(self) -> None:
+            self.read_count = 0
+
+        async def __aenter__(self) -> "FakeClientContext":
+            return self
+
+        async def __aexit__(
+            self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+        ) -> None:
+            return None
+
+        async def read_flow_run(self, _: UUID) -> SimpleNamespace:
+            self.read_count += 1
+            if self.read_count == 1:
+                return SimpleNamespace(name="active-job", tags=[], state=Running())
+            raise ObjectNotFound(Exception("Flow run not found"))
+
+        async def set_flow_run_state(self, _: UUID, _state: object) -> SimpleNamespace:
+            return SimpleNamespace(status=job_routes.SetStateStatus.ACCEPT)
+
+    def clean_resources(resources: list[MinioResource], _settings: object) -> bool:
+        cleaned_resources.extend(resources)
+        return True
+
+    monkeypatch.setattr(job_routes, "get_client", lambda: FakeClientContext())
+    monkeypatch.setattr(job_routes, "cleanup_resources", clean_resources)
+    monkeypatch.setattr(job_routes, "delete_run", lambda _: pytest.fail("Prefect history is already missing"))
+
+    with caplog.at_level(logging.WARNING, logger="orchestrator"):
+        response = client.delete(f"/job/{job_id}")
+
+    assert response.status_code == 202
+    assert response.json() == {"job_id": str(job_id), "deleted": False}
+    assert cleaned_resources == [resource]
+    assert job_store.jobs[job_id].deleted_at is not None
+    assert job_store.resources[job_id] == {}
+    assert f"delete_job job_id={job_id}: Prefect history was deleted while waiting for cancellation" in caplog.messages
+
+
+async def test_wait_for_flow_run_cancellation_times_out(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Stop polling when Prefect does not produce a terminal state in time."""
+    job_id = uuid4()
+
+    class FakeClientContext:
+        async def __aenter__(self) -> "FakeClientContext":
+            return self
+
+        async def __aexit__(
+            self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+        ) -> None:
+            return None
+
+        async def read_flow_run(self, _: UUID) -> SimpleNamespace:
+            await asyncio.Future()
+            raise AssertionError("unreachable")
+
+    monkeypatch.setattr(job_routes, "get_client", lambda: FakeClientContext())
+    monkeypatch.setattr(job_routes.settings, "cancellation_timeout_seconds", 0.01)
+
+    with caplog.at_level(logging.ERROR, logger="orchestrator"):
+        result = await job_routes._wait_for_flow_run_cancellation(job_id)
+
+    assert result == job_routes.CancellationWaitResult.FAILED
+    assert f"delete_job cancellation timed out job_id={job_id} timeout_seconds=0.01" in caplog.messages
+
+
+def test_delete_job_cleans_declared_resources_before_deleting_history(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, job_store: InMemoryJobStore
+) -> None:
+    """Use durable cleanup resources before deleting the Prefect flow run."""
+    job_id = uuid4()
+    _persist_job(job_store, job_id, "finished-job")
     cleaned_resources: list[MinioResource] = []
     delete_called = False
+    resource = MinioResource(host="omotes-minio", port=9000, path="flow-results/run-id")
+    resource_key = resource.model_dump_json(by_alias=True)
+    job_store.resources[job_id] = {
+        resource_key: JobCleanupResource(resource_key=resource_key, resource=resource),
+    }
 
     class FakeClientContext:
         async def __aenter__(self) -> "FakeClientContext":
@@ -371,26 +490,6 @@ def test_delete_job_cleans_declared_resources_before_deleting_history(
 
         async def read_flow_run(self, _: UUID) -> SimpleNamespace:
             return SimpleNamespace(name="finished-job", tags=[], state=Cancelled())
-
-        async def read_artifacts(self, **_kwargs: object) -> list[SimpleNamespace]:
-            return [
-                SimpleNamespace(
-                    key=JOB_CLEANUP_RESOURCES_ARTIFACT_KEY,
-                    data=[
-                        {
-                            "version": 1,
-                            "resources": [
-                                {
-                                    "type": "minio",
-                                    "host": "omotes-minio",
-                                    "port": 9000,
-                                    "path": "flow-results/run-id",
-                                }
-                            ],
-                        }
-                    ],
-                )
-            ]
 
     def clean_resources(resources: list[MinioResource], _settings: object) -> None:
         cleaned_resources.extend(resources)
@@ -412,11 +511,20 @@ def test_delete_job_cleans_declared_resources_before_deleting_history(
 
 
 def test_delete_job_logs_cleanup_failure_when_credentials_do_not_match(
-    monkeypatch: pytest.MonkeyPatch, client: TestClient, caplog: pytest.LogCaptureFixture
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    job_store: InMemoryJobStore,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Log cleanup failures without failing the delete response."""
     job_id = uuid4()
+    _persist_job(job_store, job_id, "finished-job")
     delete_called = False
+    resource = MinioResource(host="unconfigured-minio", port=9000, path="flow-results/run-id")
+    resource_key = resource.model_dump_json(by_alias=True)
+    job_store.resources[job_id] = {
+        resource_key: JobCleanupResource(resource_key=resource_key, resource=resource),
+    }
 
     class FakeClientContext:
         async def __aenter__(self) -> "FakeClientContext":
@@ -429,26 +537,6 @@ def test_delete_job_logs_cleanup_failure_when_credentials_do_not_match(
 
         async def read_flow_run(self, _: UUID) -> SimpleNamespace:
             return SimpleNamespace(name="finished-job", tags=[], state=Cancelled())
-
-        async def read_artifacts(self, **_kwargs: object) -> list[SimpleNamespace]:
-            return [
-                SimpleNamespace(
-                    key=JOB_CLEANUP_RESOURCES_ARTIFACT_KEY,
-                    data=[
-                        {
-                            "version": 1,
-                            "resources": [
-                                {
-                                    "type": "minio",
-                                    "host": "unconfigured-minio",
-                                    "port": 9000,
-                                    "path": "flow-results/run-id",
-                                }
-                            ],
-                        }
-                    ],
-                )
-            ]
 
     async def delete_existing_flow_run(_: UUID) -> bool:
         nonlocal delete_called
@@ -644,10 +732,11 @@ def test_postgresql_cleanup_rejects_non_uuid_schema_before_connecting(monkeypatc
 
 
 def test_delete_job_keeps_history_when_prefect_rejects_cancellation(
-    monkeypatch: pytest.MonkeyPatch, client: TestClient
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, job_store: InMemoryJobStore
 ) -> None:
     """Do not delete an active run when Prefect rejects its cancellation request."""
     job_id = uuid4()
+    _persist_job(job_store, job_id, "active-job")
     delete_called = False
 
     class FakeClientContext:
@@ -665,9 +754,6 @@ def test_delete_job_keeps_history_when_prefect_rejects_cancellation(
         async def set_flow_run_state(self, _: UUID, _state: object) -> SimpleNamespace:
             return SimpleNamespace(status=job_routes.SetStateStatus.REJECT)
 
-        async def read_artifacts(self, **_kwargs: object) -> list[object]:
-            return []
-
     async def delete_existing_flow_run(_: UUID) -> bool:
         nonlocal delete_called
         delete_called = True
@@ -683,11 +769,55 @@ def test_delete_job_keeps_history_when_prefect_rejects_cancellation(
     assert not delete_called
 
 
+def test_delete_job_continues_when_rejected_cancellation_is_already_cancelled(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, job_store: InMemoryJobStore
+) -> None:
+    """Use the current Prefect state when a cancellation proposal loses a race."""
+    job_id = uuid4()
+    _persist_job(job_store, job_id, "cancelled-job")
+
+    class FakeClientContext:
+        def __init__(self) -> None:
+            self.read_count = 0
+
+        async def __aenter__(self) -> "FakeClientContext":
+            return self
+
+        async def __aexit__(
+            self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+        ) -> None:
+            return None
+
+        async def read_flow_run(self, _: UUID) -> SimpleNamespace:
+            self.read_count += 1
+            state = Running() if self.read_count == 1 else Cancelled()
+            return SimpleNamespace(name="cancelled-job", tags=[], state=state)
+
+        async def set_flow_run_state(self, _: UUID, _state: object) -> SimpleNamespace:
+            return SimpleNamespace(status=job_routes.SetStateStatus.REJECT)
+
+    async def delete_existing_flow_run(_: UUID) -> bool:
+        return True
+
+    monkeypatch.setattr(job_routes, "get_client", lambda: FakeClientContext())
+    monkeypatch.setattr(job_routes, "delete_run", delete_existing_flow_run)
+
+    response = client.delete(f"/job/{job_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {"job_id": str(job_id), "deleted": True}
+    assert job_store.jobs[job_id].deleted_at is not None
+
+
 def test_delete_job_returns_false_when_prefect_metadata_read_is_unavailable(
-    monkeypatch: pytest.MonkeyPatch, client: TestClient, caplog: pytest.LogCaptureFixture
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    job_store: InMemoryJobStore,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Log metadata lookup connectivity failures and return false."""
     job_id = uuid4()
+    _persist_job(job_store, job_id)
 
     class FailingClientContext:
         async def __aenter__(self) -> "FailingClientContext":
@@ -721,11 +851,31 @@ def test_delete_job_returns_false_for_invalid_job_id(client: TestClient, caplog:
     assert "delete_job failed: invalid job_id=not-a-uuid" in caplog.messages
 
 
-def test_delete_job_returns_false_when_flow_run_has_no_state(
+def test_delete_job_returns_false_for_unknown_database_job(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Log a missing Prefect state instead of returning a conflict exception."""
+    """Reject unknown durable jobs without querying Prefect."""
     job_id = uuid4()
+    monkeypatch.setattr(job_routes, "get_client", lambda: pytest.fail("must not query Prefect"))
+
+    with caplog.at_level(logging.ERROR, logger="orchestrator"):
+        response = client.delete(f"/job/{job_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {"job_id": str(job_id), "deleted": False}
+    assert f"delete_job failed job_id={job_id}: job was not found in the orchestrator database" in caplog.messages
+
+
+def test_delete_job_deletes_history_when_flow_run_has_no_state(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    job_store: InMemoryJobStore,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Log a missing Prefect state and continue deleting what remains."""
+    job_id = uuid4()
+    _persist_job(job_store, job_id, "stateless-job")
+    delete_called = False
 
     class FakeClientContext:
         async def __aenter__(self) -> "FakeClientContext":
@@ -739,13 +889,21 @@ def test_delete_job_returns_false_when_flow_run_has_no_state(
         async def read_flow_run(self, _: UUID) -> SimpleNamespace:
             return SimpleNamespace(name="stateless-job", tags=[], state=None)
 
+    async def delete_existing_flow_run(_: UUID) -> bool:
+        nonlocal delete_called
+        delete_called = True
+        return True
+
     monkeypatch.setattr(job_routes, "get_client", lambda: FakeClientContext())
+    monkeypatch.setattr(job_routes, "delete_run", delete_existing_flow_run)
 
     with caplog.at_level(logging.ERROR, logger="orchestrator"):
         response = client.delete(f"/job/{job_id}")
 
     assert response.status_code == 200
-    assert response.json() == {"job_id": str(job_id), "deleted": False}
+    assert response.json() == {"job_id": str(job_id), "deleted": True}
+    assert delete_called
+    assert job_store.jobs[job_id].deleted_at is not None
     assert f"delete_job failed job_id={job_id}: flow run has no Prefect state" in caplog.messages
 
 
@@ -891,3 +1049,108 @@ def test_create_job_returns_404_when_prefect_deployment_unavailable(
 
     assert response.status_code == 404
     assert "Flow deployment 'grow_optimizer:0.10.2' is not available in Prefect" in response.json()["detail"]
+
+
+def test_created_job_metadata_survives_prefect_history_deletion(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    """Return durable identity, metadata, and status after Prefect history is removed."""
+    job_id = uuid4()
+
+    async def fake_get_workflow_definition(_: str) -> WorkflowDefinition:
+        return WorkflowDefinition(
+            workflow_type_name="grow_optimizer_default",
+            workflow_type_description_name="Draft Design - Optimization",
+            prefect_flow_name="grow_optimizer",
+        )
+
+    async def fake_trigger_flow_run(**_: object) -> UUID:
+        return job_id
+
+    async def raise_missing_flow_run(*_args: object, **_kwargs: object) -> None:
+        raise ObjectNotFound(Exception("Flow run not found"))
+
+    monkeypatch.setattr(workflow_registry, "get_workflow_definition", fake_get_workflow_definition)
+    monkeypatch.setattr(job_routes, "trigger_flow_run", fake_trigger_flow_run)
+
+    payload = {
+        "job_name": "job-123",
+        "workflow_type": "grow_optimizer_default",
+        "version": "0.10.2",
+        "user_name": "alice",
+        "input_esdl": "aW5wdXQ=",
+        "input_params_dict": {},
+    }
+    create_response = client.post("/job/", json=payload)
+    monkeypatch.setattr(job_routes, "get_flow_run_status_and_results", raise_missing_flow_run)
+    get_response = client.get(f"/job/{job_id}")
+
+    assert create_response.status_code == 200
+    assert create_response.json() == {"job_id": str(job_id), "status": "ENQUEUED"}
+    assert get_response.status_code == 200
+    assert get_response.json() == {
+        "job_id": str(job_id),
+        "job_name": "job-123",
+        "status": "ENQUEUED",
+        "user_name": "alice",
+        "workflow_type": "grow_optimizer_default",
+        "progress_fraction": None,
+        "progress_message": None,
+        "input_esdl": None,
+        "output_esdl": None,
+        "input_params_dict": {},
+        "timeout_after_s": 3600,
+        "logs": "",
+        "esdl_feedback": [],
+        "job_priority": None,
+    }
+
+
+def test_register_job_cleanup_resources_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    job_store: InMemoryJobStore,
+) -> None:
+    """Register the same cleanup location repeatedly without duplicating it."""
+    job_id = uuid4()
+
+    async def fake_get_workflow_definition(_: str) -> WorkflowDefinition:
+        return WorkflowDefinition(
+            workflow_type_name="grow_optimizer_default",
+            workflow_type_description_name="Draft Design - Optimization",
+            prefect_flow_name="grow_optimizer",
+        )
+
+    async def fake_trigger_flow_run(**_: object) -> UUID:
+        return job_id
+
+    monkeypatch.setattr(workflow_registry, "get_workflow_definition", fake_get_workflow_definition)
+    monkeypatch.setattr(job_routes, "trigger_flow_run", fake_trigger_flow_run)
+    client.post(
+        "/job/",
+        json={
+            "job_name": "job-123",
+            "workflow_type": "grow_optimizer_default",
+            "user_name": "alice",
+            "input_esdl": "aW5wdXQ=",
+            "input_params_dict": {},
+        },
+    )
+    resources = {
+        "version": 1,
+        "resources": [
+            {
+                "type": "minio",
+                "host": "localhost",
+                "port": 9000,
+                "path": f"flow-results/{job_id}",
+            }
+        ],
+    }
+
+    first_response = client.post(f"/job/{job_id}/cleanup-resources", json=resources)
+    second_response = client.post(f"/job/{job_id}/cleanup-resources", json=resources)
+
+    assert first_response.status_code == 204
+    assert second_response.status_code == 204
+    assert len(job_store.resources[job_id]) == 1
