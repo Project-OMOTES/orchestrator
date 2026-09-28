@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import binascii
 import json
@@ -5,6 +6,7 @@ import logging
 from typing import cast
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, HTTPException
 from omotes_sdk.prefect_util import (
     delete_run,
@@ -13,6 +15,10 @@ from omotes_sdk.prefect_util import (
     get_runs,
     trigger_flow_run,
 )
+from prefect.client.orchestration import get_client
+from prefect.client.schemas.responses import SetStateStatus
+from prefect.exceptions import ObjectNotFound, PrefectHTTPStatusError
+from prefect.states import Cancelling
 
 from orchestrator import workflow_registry
 from orchestrator.models import (
@@ -23,7 +29,7 @@ from orchestrator.models import (
     JobStatusResponse,
     JobSummary,
 )
-from orchestrator.prefect_errors import raise_for_prefect_runtime_error
+from orchestrator.prefect_errors import raise_for_prefect_client_error, raise_for_prefect_runtime_error
 from orchestrator.settings import settings
 
 logger = logging.getLogger("orchestrator")
@@ -113,6 +119,60 @@ def _get_esdl_feedback(esdl_messages: object) -> list[dict]:
     return esdl_feedback
 
 
+async def _prepare_flow_run_deletion(flow_run_id: UUID) -> tuple[str, str, str]:
+    """Cancel a flow run and wait for Prefect to confirm that it has stopped."""
+    try:
+        async with get_client() as client:
+            flow_run = await client.read_flow_run(flow_run_id)
+            if flow_run.state is None:
+                raise HTTPException(status_code=409, detail=f"Job {flow_run_id} has no Prefect state")
+
+            if not flow_run.state.is_final():
+                cancellation_result = await client.set_flow_run_state(flow_run_id, Cancelling())
+                if cancellation_result.status != SetStateStatus.ACCEPT:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"Prefect did not accept cancellation for job {flow_run_id}",
+                    )
+
+                deadline = asyncio.get_running_loop().time() + settings.cancellation_timeout_seconds
+                while True:
+                    flow_run = await client.read_flow_run(flow_run_id)
+                    if flow_run.state is not None and flow_run.state.is_cancelled():
+                        break
+                    if flow_run.state is not None and flow_run.state.is_final():
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"Job {flow_run_id} reached {flow_run.state.type.name} instead of CANCELLED",
+                        )
+
+                    remaining_seconds = deadline - asyncio.get_running_loop().time()
+                    if remaining_seconds <= 0:
+                        raise HTTPException(
+                            status_code=504,
+                            detail=f"Timed out waiting for job {flow_run_id} to cancel",
+                        )
+                    await asyncio.sleep(min(settings.cancellation_poll_interval_seconds, remaining_seconds))
+            elif not flow_run.state.is_cancelled():
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Job {flow_run_id} is already {flow_run.state.type.name} and cannot be cancelled",
+                )
+    except ObjectNotFound:
+        return "unknown", "unknown", "unknown"
+    except (PrefectHTTPStatusError, httpx.RequestError) as exc:
+        raise_for_prefect_client_error(exc)
+        raise
+
+    tags_by_key: dict[str, str] = {}
+    for tag in flow_run.tags or []:
+        if ":" in tag:
+            tag_key, tag_value = tag.split(":", 1)
+            tags_by_key[tag_key] = tag_value
+
+    return flow_run.name, tags_by_key.get("type", ""), tags_by_key.get("user", "")
+
+
 @router.post("/", response_model=JobStatusResponse)
 async def create_job(job_input: JobInput) -> JobStatusResponse:
     """Start new job: 'input_params_dict' can have lists and (nested) dicts as values."""
@@ -198,6 +258,8 @@ async def get_job(job_id: str) -> JobResponse:
         run_name, state_type, input_parameters, tags, artifacts, logs = await get_flow_run_status_and_results(
             job_uuid, settings.minio_host, settings.minio_port, settings.minio_access_key, settings.minio_secret
         )
+    except ObjectNotFound as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown job {job_id}") from exc
     except RuntimeError as exc:
         raise_for_prefect_runtime_error(exc)
         raise
@@ -238,11 +300,13 @@ async def get_job(job_id: str) -> JobResponse:
 
 @router.delete("/{job_id}", response_model=JobDeleteResponse)
 async def delete_job(job_id: str) -> JobDeleteResponse:
-    """Delete job: terminate if running."""
+    """Cancel a job, wait for it to stop, then remove its Prefect history."""
     try:
         job_uuid = UUID(job_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid job ID format") from None
+
+    job_name, workflow_type, user_name = await _prepare_flow_run_deletion(job_uuid)
 
     try:
         deleted = await delete_run(job_uuid)
@@ -254,9 +318,9 @@ async def delete_job(job_id: str) -> JobDeleteResponse:
 
     logger.info(
         "delete_job status=DELETED job_name=%s workflow_type=%s user_name=%s",
-        "unknown",
-        "unknown",
-        "unknown",
+        job_name,
+        workflow_type,
+        user_name,
     )
 
     #  TODO delete time series data if present (db in influxdb and schema in postgres?)

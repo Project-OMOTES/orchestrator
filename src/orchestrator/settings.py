@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     workflow_settings_file: str | None = None  # can be added later by POST /workflow/
 
     request_timeout_seconds: int = 30
+    cancellation_timeout_seconds: int = 300
+    cancellation_poll_interval_seconds: float = 2
 
     @property
     def cors_origins(self) -> list[str]:
