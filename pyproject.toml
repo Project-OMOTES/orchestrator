@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 authors = [
     { name = "Mark Vrijlandt", email = "mark.vrijlandt@tno.nl" },
     { name = "Cheng-Kai Wang", email = "cheng-kai.wang@tno.nl" },
-    { name = "Sebastiaan la Fleur", email = "sebastiaan.lafleur@tno.nl" }
+    { name = "Sebastiaan la Fleur", email = "sebastiaan.lafleur@tno.nl" },
 ]
 keywords = ["omotes", "orchestrator", "rest", "api", "fastapi", "pydantic"]
 classifiers = [
@@ -20,9 +20,12 @@ classifiers = [
 dependencies = [
     "fastapi[standard]>=0.104.0",
     "jsonschema>=4.0",
-    "omotes-sdk-python==5.0.2",
+    "omotes-sdk-python>=5.1.0",
+    "influxdb>=5.3.1",
+    "minio>=7.2.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
+    "psycopg[binary]>=3.2",
     "uvicorn>=0.24.0",
     "python-multipart>=0.0.6",
 ]
@@ -84,5 +87,5 @@ ignore = [
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]  # assert statements are standard in tests
-"src/orchestrator/settings.py" = ["S104"]  # 0.0.0.0 is intentional for Docker
+"tests/**" = ["S101"]                     # assert statements are standard in tests
+"src/orchestrator/settings.py" = ["S104"] # 0.0.0.0 is intentional for Docker

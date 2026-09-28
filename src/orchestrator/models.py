@@ -57,7 +57,7 @@ class JobStatusResponse(BaseModel):
 class JobDeleteResponse(BaseModel):
     """Response for job deletion."""
 
-    job_id: UUID
+    job_id: UUID | None
     deleted: bool
 
 
