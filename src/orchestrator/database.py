@@ -209,7 +209,9 @@ class JobStore:
             )
             await session.commit()
 
-    async def register_resources(self, job_id: UUID, resources: list[MinioResource | TimeseriesResource]) -> None:
+    async def register_cleanup_resources(
+        self, job_id: UUID, resources: list[MinioResource | TimeseriesResource]
+    ) -> None:
         """Idempotently register resources owned by a job."""
         if not resources:
             return

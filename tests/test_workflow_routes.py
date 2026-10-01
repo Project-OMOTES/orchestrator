@@ -1,9 +1,12 @@
 import asyncio
+import base64
 import json
 import logging
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace, TracebackType
+from typing import cast
 from uuid import UUID, uuid4
 
 import httpx
@@ -1032,8 +1035,10 @@ def test_create_job_returns_404_when_prefect_deployment_unavailable(
     async def _raise_deployment_missing(**_: object) -> UUID:
         raise RuntimeError("RuntimeError: Prefect deployment 'grow_optimizer:0.10.2' not found for run 'job-123'")
 
+    deleted_resources: list[MinioResource] = []
     monkeypatch.setattr(workflow_registry, "get_workflow_definition", _fake_get_workflow_definition)
     monkeypatch.setattr(job_routes, "trigger_flow_run", _raise_deployment_missing)
+    monkeypatch.setattr(job_routes, "_delete_input_esdl", deleted_resources.append)
 
     response = client.post(
         "/job/",
@@ -1049,6 +1054,54 @@ def test_create_job_returns_404_when_prefect_deployment_unavailable(
 
     assert response.status_code == 404
     assert "Flow deployment 'grow_optimizer:0.10.2' is not available in Prefect" in response.json()["detail"]
+    assert len(deleted_resources) == 1
+
+
+def test_create_job_stores_large_input_esdl_and_passes_reference_to_prefect(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, job_store: InMemoryJobStore
+) -> None:
+    """Store large input ESDL in MinIO and pass only its URI to Prefect."""
+
+    async def fake_get_workflow_definition(_: str) -> WorkflowDefinition:
+        return WorkflowDefinition(
+            workflow_type_name="grow_optimizer_default",
+            workflow_type_description_name="Draft Design - Optimization",
+            prefect_flow_name="grow_optimizer",
+        )
+
+    job_id = uuid4()
+    trigger_arguments: dict[str, object] = {}
+
+    async def fake_trigger_flow_run(**kwargs: object) -> UUID:
+        trigger_arguments.update(kwargs)
+        return job_id
+
+    monkeypatch.setattr(workflow_registry, "get_workflow_definition", fake_get_workflow_definition)
+    monkeypatch.setattr(job_routes, "trigger_flow_run", fake_trigger_flow_run)
+
+    response = client.post(
+        "/job/",
+        json={
+            "job_name": "large-job",
+            "workflow_type": "grow_optimizer_default",
+            "user_name": "alice",
+            "input_esdl": base64.b64encode(b"x" * 600_000).decode("ascii"),
+            "input_params_dict": {},
+        },
+    )
+
+    assert response.status_code == 200
+    parameters = cast(dict[str, object], trigger_arguments["parameters"])
+    flow_results_folder = parameters["flow_results_folder"]
+    assert isinstance(flow_results_folder, str)
+    assert re.fullmatch(r"large-job-\d{8}-\d{2}h\d{2}m\d{2}s-[0-9a-f]{8}", flow_results_folder)
+    assert parameters == {
+        "input_esdl_minio_path": f"s3://prefect-results/flow-results/{flow_results_folder}/input.esdl",
+        "flow_results_folder": flow_results_folder,
+        "workflow_type_name": "grow_optimizer_default",
+        "workflow_config": {},
+    }
+    assert len(job_store.resources[job_id]) == 1
 
 
 def test_created_job_metadata_survives_prefect_history_deletion(
@@ -1153,4 +1206,10 @@ def test_register_job_cleanup_resources_is_idempotent(
 
     assert first_response.status_code == 204
     assert second_response.status_code == 204
-    assert len(job_store.resources[job_id]) == 1
+    assert len(job_store.resources[job_id]) == 2
+    registered_paths = [
+        resource.resource.path
+        for resource in job_store.resources[job_id].values()
+        if isinstance(resource.resource, MinioResource)
+    ]
+    assert registered_paths.count(f"flow-results/{job_id}") == 1

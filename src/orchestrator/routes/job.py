@@ -3,13 +3,20 @@ import base64
 import binascii
 import json
 import logging
+import re
+from datetime import UTC, datetime
 from enum import StrEnum
+from io import BytesIO
 from typing import Annotated, cast
-from uuid import UUID
+from urllib.parse import urlsplit
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
+from minio import Minio
 from omotes_sdk.prefect_util import (
+    PREFECT_RESULTS_BUCKET,
     JobCleanupResources,
+    MinioResource,
     delete_run,
     from_prefect_state_type_to_job_status,
     get_flow_run_status_and_results,
@@ -43,6 +50,7 @@ _TERMINAL_JOB_STATUSES = {
     JobStatus.TIMEOUT,
     JobStatus.ERROR,
 }
+_INPUT_ESDL_BUCKET = PREFECT_RESULTS_BUCKET
 
 router = APIRouter(prefix="/job", tags=["job"])
 
@@ -68,6 +76,91 @@ def _decode_input_esdl(input_esdl: str) -> str:
         return base64.b64decode(input_esdl, validate=True).decode("utf-8")
     except (binascii.Error, UnicodeDecodeError) as exc:
         raise HTTPException(status_code=400, detail="input_esdl must be valid base64-encoded UTF-8 text") from exc
+
+
+def _minio_client() -> Minio:
+    return Minio(
+        f"{settings.minio_host}:{settings.minio_port}",
+        access_key=settings.minio_access_key,
+        secret_key=settings.minio_secret,
+        secure=False,
+    )
+
+
+def _create_flow_results_folder(run_name: str) -> str:
+    sanitized_name = re.sub(r"[^a-z0-9-]+", "-", run_name.lower().strip())
+    sanitized_name = re.sub(r"-+", "-", sanitized_name).strip("-") or "job"
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%Hh%Mm%Ss")
+    return f"{sanitized_name}-{timestamp}-{uuid4().hex[:8]}"
+
+
+def _store_input_esdl(input_esdl: str, flow_results_folder: str) -> tuple[str, MinioResource]:
+    object_path = f"flow-results/{flow_results_folder}/input.esdl"
+    input_bytes = input_esdl.encode("utf-8")
+    client = _minio_client()
+    client.put_object(
+        _INPUT_ESDL_BUCKET,
+        object_path,
+        BytesIO(input_bytes),
+        length=len(input_bytes),
+        content_type="application/xml",
+    )
+    resource = MinioResource(
+        host=settings.minio_host,
+        port=int(settings.minio_port),
+        bucket=_INPUT_ESDL_BUCKET,
+        path=f"flow-results/{flow_results_folder}",
+    )
+    return f"s3://{_INPUT_ESDL_BUCKET}/{object_path}", resource
+
+
+def _delete_input_esdl(resource: MinioResource) -> None:
+    _minio_client().remove_object(resource.bucket, f"{resource.path}/input.esdl")
+
+
+def _cleanup_unregistered_input_esdl(resource: MinioResource, reason: str) -> None:
+    try:
+        _delete_input_esdl(resource)
+    except Exception:
+        logger.exception("create_job failed to remove stored input ESDL after %s", reason)
+
+
+async def _persist_created_job(
+    run_id: UUID,
+    job_input: JobInput,
+    input_esdl_resource: MinioResource,
+    store: JobStore,
+) -> None:
+    try:
+        await store.create_job(
+            job_id=run_id,
+            job_name=job_input.job_name,
+            workflow_type=job_input.workflow_type,
+            workflow_version=job_input.version,
+            user_name=job_input.user_name,
+            status=JobStatus.ENQUEUED,
+        )
+        await store.register_cleanup_resources(run_id, [input_esdl_resource])
+    except Exception:
+        logger.exception("create_job failed to persist job_id=%s; removing Prefect flow run", run_id)
+        await delete_run(run_id)
+        _cleanup_unregistered_input_esdl(input_esdl_resource, "job persistence failure")
+        raise
+
+
+def _read_input_esdl(input_reference: object) -> str | None:
+    if not isinstance(input_reference, str):
+        return None
+    parsed = urlsplit(input_reference)
+    if parsed.scheme != "s3" or not parsed.netloc or not parsed.path.strip("/"):
+        return input_reference
+
+    response = _minio_client().get_object(parsed.netloc, parsed.path.lstrip("/"))
+    try:
+        return response.read().decode("utf-8")
+    finally:
+        response.close()
+        response.release_conn()
 
 
 def _b64_encode_esdl_str(output_esdl: object) -> str | None:
@@ -264,36 +357,34 @@ async def create_job(job_input: JobInput, store: JobStoreDependency) -> JobStatu
     if job_input.user_name:
         run_tags.append(f"user:{job_input.user_name}")
 
+    input_esdl = _decode_input_esdl(job_input.input_esdl)
+    flow_results_folder = _create_flow_results_folder(job_input.job_name)
+    input_esdl_reference, input_esdl_resource = _store_input_esdl(input_esdl, flow_results_folder)
+    parameters = {
+        "input_esdl_minio_path": input_esdl_reference,
+        "flow_results_folder": flow_results_folder,
+        "workflow_type_name": job_input.workflow_type,
+        "workflow_config": job_input.input_params_dict,
+    }
+
     try:
         run_id = await trigger_flow_run(
             run_name=job_input.job_name,
             deployment_base_name=workflow_definition.prefect_flow_name,
             deployment_version=job_input.version,
-            parameters={
-                "input_esdl": _decode_input_esdl(job_input.input_esdl),
-                "workflow_type_name": job_input.workflow_type,
-                "workflow_config": job_input.input_params_dict,
-            },
+            parameters=parameters,
             run_tags=run_tags,
             memory_limit=workflow_definition.memory_limit,
         )
     except RuntimeError as exc:
+        _cleanup_unregistered_input_esdl(input_esdl_resource, "Prefect trigger failure")
         raise_for_prefect_runtime_error(exc)
         raise
-
-    try:
-        await store.create_job(
-            job_id=run_id,
-            job_name=job_input.job_name,
-            workflow_type=job_input.workflow_type,
-            workflow_version=job_input.version,
-            user_name=job_input.user_name,
-            status=JobStatus.ENQUEUED,
-        )
     except Exception:
-        logger.exception("create_job failed to persist job_id=%s; removing Prefect flow run", run_id)
-        await delete_run(run_id)
+        _cleanup_unregistered_input_esdl(input_esdl_resource, "Prefect trigger failure")
         raise
+
+    await _persist_created_job(run_id, job_input, input_esdl_resource, store)
 
     logger.info(
         "create_job job_name=%s workflow_type=%s workflow_version=%s user_name=%s",
@@ -377,13 +468,15 @@ async def get_job(job_id: str, store: JobStoreDependency) -> JobResponse:
     esdl_messages_data = _parse_artifact_data(esdl_messages_artifact.get("data")) if esdl_messages_artifact else None
     progress_artifact = _find_artifact_by_prefix(artifacts, "progress")
 
+    input_esdl = _read_input_esdl(input_parameters.get("input_esdl_minio_path"))
+
     return JobResponse(
         job_id=job_uuid,
         job_name=stored_job.job_name,
         status=status,
         user_name=stored_job.user_name,
         workflow_type=stored_job.workflow_type,
-        input_esdl=_b64_encode_esdl_str(input_parameters.get("input_esdl")),
+        input_esdl=_b64_encode_esdl_str(input_esdl),
         output_esdl=_b64_encode_esdl_str(output_esdl_data),
         input_params_dict=input_parameters.get("workflow_config", {}),
         timeout_after_s=input_parameters.get("timeout_after_s", 3600),
@@ -423,7 +516,7 @@ async def register_job_cleanup_resources(
         raise HTTPException(status_code=400, detail="Invalid job ID format") from None
     if await store.get_job(job_uuid) is None:
         raise HTTPException(status_code=404, detail=f"Unknown job {job_id}")
-    await store.register_resources(job_uuid, cleanup_resources_payload.resources)
+    await store.register_cleanup_resources(job_uuid, cleanup_resources_payload.resources)
 
 
 @router.delete("/{job_id}", response_model=JobDeleteResponse)

@@ -68,7 +68,9 @@ class InMemoryJobStore:
         if job_id in self.jobs:
             self.jobs[job_id] = replace(self.jobs[job_id], deleted_at=datetime.now(UTC))
 
-    async def register_resources(self, job_id: UUID, resources: list[MinioResource | TimeseriesResource]) -> None:
+    async def register_cleanup_resources(
+        self, job_id: UUID, resources: list[MinioResource | TimeseriesResource]
+    ) -> None:
         """Register resources using their serialized payload as a stable key."""
         stored = self.resources.setdefault(job_id, {})
         for resource in resources:
@@ -92,8 +94,17 @@ def job_store() -> InMemoryJobStore:
 
 
 @pytest.fixture
-def client(job_store: InMemoryJobStore) -> Iterator[TestClient]:
+def client(job_store: InMemoryJobStore, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     """Create an API client backed by the isolated job store."""
+
+    def fake_store_input_esdl(input_esdl: str, flow_results_folder: str) -> tuple[str, MinioResource]:
+        return (
+            f"s3://prefect-results/flow-results/{flow_results_folder}/input.esdl",
+            MinioResource(host="localhost", port=9000, path=f"flow-results/{flow_results_folder}"),
+        )
+
+    monkeypatch.setattr(job_routes, "_store_input_esdl", fake_store_input_esdl)
+    monkeypatch.setattr(job_routes, "_delete_input_esdl", lambda _: None)
     app = create_app()
     app.dependency_overrides[job_routes.get_job_store] = lambda: job_store
     with TestClient(app) as test_client:
