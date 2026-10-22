@@ -32,6 +32,7 @@ dependencies = [
     "omotes-sdk-python ~= 4.3.6",
     "alembic ~= 1.13.1",
     "influxdb ~= 5.3.1",
+    "certifi >= 2026.10.19",
 ]
 
 [project.optional-dependencies]
