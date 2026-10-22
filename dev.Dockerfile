@@ -2,7 +2,7 @@
 FROM python:3.12-slim AS builder
 
 # Copy uv binaries from the official image into the builder stage
-COPY --from=ghcr.io/astral-sh/uv:0.8.22 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.13.4 /uv /uvx /bin/
 
 # Set working directory and optimization variables
 WORKDIR /app
@@ -29,6 +29,10 @@ RUN uv pip install --python /app/.venv/bin/python /omotes-sdk-python/
 
 # RUN STAGE
 FROM python:3.12-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
