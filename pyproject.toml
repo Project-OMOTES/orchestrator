@@ -19,6 +19,7 @@ classifiers = [
 
 dependencies = [
     "alembic>=1.16.0",
+    "certifi>=2026.10.19",
     "fastapi[standard]>=0.104.0",
     "jsonschema>=4.0",
     "omotes-sdk-python>=5.1.3",
