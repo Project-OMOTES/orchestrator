@@ -9,7 +9,7 @@ from typing import Any
 from uuid import UUID
 
 from omotes_sdk.job_status import JobStatus
-from omotes_sdk.prefect_util import MinioResource, TimeseriesResource
+from omotes_sdk.prefect_util import S3Resource, TimeseriesResource
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, select, update
 from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
@@ -97,7 +97,7 @@ class JobCleanupResource:
     """Cleanup resource with its stable database key."""
 
     resource_key: str
-    resource: MinioResource | TimeseriesResource
+    resource: S3Resource | TimeseriesResource
 
 
 _engine: AsyncEngine | None = None
@@ -141,7 +141,7 @@ def _to_stored_job(row: JobRow) -> Job:
     )
 
 
-def _resource_payload(resource: MinioResource | TimeseriesResource) -> dict[str, Any]:
+def _resource_payload(resource: S3Resource | TimeseriesResource) -> dict[str, Any]:
     return resource.model_dump(mode="json", by_alias=True)
 
 
@@ -209,9 +209,7 @@ class JobStore:
             )
             await session.commit()
 
-    async def register_cleanup_resources(
-        self, job_id: UUID, resources: list[MinioResource | TimeseriesResource]
-    ) -> None:
+    async def register_cleanup_resources(self, job_id: UUID, resources: list[S3Resource | TimeseriesResource]) -> None:
         """Idempotently register resources owned by a job."""
         if not resources:
             return
@@ -255,7 +253,7 @@ class JobStore:
             resources: list[JobCleanupResource] = []
             for row in rows:
                 resource_type = row.resource_data.get("type")
-                model = MinioResource if resource_type == "minio" else TimeseriesResource
+                model = S3Resource if resource_type == "s3" else TimeseriesResource
                 resources.append(
                     JobCleanupResource(resource_key=row.resource_key, resource=model.model_validate(row.resource_data))
                 )

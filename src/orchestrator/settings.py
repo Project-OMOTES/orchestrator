@@ -19,10 +19,11 @@ class Settings(BaseSettings):
     prefect_api_url: str
     prefect_api_auth_string: str
 
-    minio_host: str
-    minio_port: str
-    minio_access_key: str
-    minio_secret: str
+    s3_host: str
+    s3_port: str
+    s3_filer_port: int = 8888
+    s3_access_key: str
+    s3_secret_key: str
 
     influx_host: str | None = None
     influx_port: int | None = None

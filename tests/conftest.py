@@ -7,15 +7,15 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 from omotes_sdk.job_status import JobStatus
-from omotes_sdk.prefect_util import MinioResource, TimeseriesResource
+from omotes_sdk.prefect_util import S3Resource, TimeseriesResource
 
 # Set required env vars for testing before importing orchestrator modules
 os.environ.setdefault("PREFECT_API_URL", "http://localhost:4200/api")
 os.environ.setdefault("PREFECT_API_AUTH_STRING", "test-token")
-os.environ.setdefault("MINIO_HOST", "localhost")
-os.environ.setdefault("MINIO_PORT", "9000")
-os.environ.setdefault("MINIO_ACCESS_KEY", "test-access-key")
-os.environ.setdefault("MINIO_SECRET", "test-secret")
+os.environ.setdefault("S3_HOST", "localhost")
+os.environ.setdefault("S3_PORT", "8333")
+os.environ.setdefault("S3_ACCESS_KEY", "test-access-key")
+os.environ.setdefault("S3_SECRET_KEY", "test-secret")
 
 from orchestrator.database import Job, JobCleanupResource  # noqa: E402
 from orchestrator.main import create_app  # noqa: E402
@@ -68,9 +68,7 @@ class InMemoryJobStore:
         if job_id in self.jobs:
             self.jobs[job_id] = replace(self.jobs[job_id], deleted_at=datetime.now(UTC))
 
-    async def register_cleanup_resources(
-        self, job_id: UUID, resources: list[MinioResource | TimeseriesResource]
-    ) -> None:
+    async def register_cleanup_resources(self, job_id: UUID, resources: list[S3Resource | TimeseriesResource]) -> None:
         """Register resources using their serialized payload as a stable key."""
         stored = self.resources.setdefault(job_id, {})
         for resource in resources:
@@ -97,10 +95,10 @@ def job_store() -> InMemoryJobStore:
 def client(job_store: InMemoryJobStore, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     """Create an API client backed by the isolated job store."""
 
-    def fake_store_input_esdl(input_esdl: str, flow_results_folder: str) -> tuple[str, MinioResource]:
+    def fake_store_input_esdl(input_esdl: str, flow_results_folder: str) -> tuple[str, S3Resource]:
         return (
             f"s3://prefect-results/flow-results/{flow_results_folder}/input.esdl",
-            MinioResource(host="localhost", port=9000, path=f"flow-results/{flow_results_folder}"),
+            S3Resource(host="localhost", port=8333, path=f"flow-results/{flow_results_folder}"),
         )
 
     monkeypatch.setattr(job_routes, "_store_input_esdl", fake_store_input_esdl)

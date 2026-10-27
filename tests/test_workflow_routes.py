@@ -7,6 +7,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace, TracebackType
 from typing import cast
+from urllib.error import HTTPError
+from urllib.request import Request
 from uuid import UUID, uuid4
 
 import httpx
@@ -15,7 +17,7 @@ from conftest import InMemoryJobStore
 from fastapi.testclient import TestClient
 from omotes_sdk import prefect_util
 from omotes_sdk.job_status import JobStatus
-from omotes_sdk.prefect_util import MinioResource, TimeseriesResource
+from omotes_sdk.prefect_util import S3Resource, TimeseriesResource
 from prefect.exceptions import ObjectNotFound
 from prefect.states import Cancelled, Running, StateType
 
@@ -392,12 +394,12 @@ def test_delete_job_finishes_cleanup_when_prefect_history_disappears_during_canc
     """Finish durable cleanup if Prefect history is manually deleted after cancellation."""
     job_id = uuid4()
     _persist_job(job_store, job_id, "active-job")
-    resource = MinioResource(host="omotes-minio", port=9000, path="flow-results/run-id")
+    resource = S3Resource(host="omotes-seaweedfs", port=8333, path="flow-results/run-id")
     resource_key = resource.model_dump_json(by_alias=True)
     job_store.resources[job_id] = {
         resource_key: JobCleanupResource(resource_key=resource_key, resource=resource),
     }
-    cleaned_resources: list[MinioResource] = []
+    cleaned_resources: list[S3Resource] = []
 
     class FakeClientContext:
         def __init__(self) -> None:
@@ -420,7 +422,7 @@ def test_delete_job_finishes_cleanup_when_prefect_history_disappears_during_canc
         async def set_flow_run_state(self, _: UUID, _state: object) -> SimpleNamespace:
             return SimpleNamespace(status=job_routes.SetStateStatus.ACCEPT)
 
-    def clean_resources(resources: list[MinioResource], _settings: object) -> bool:
+    def clean_resources(resources: list[S3Resource], _settings: object) -> bool:
         cleaned_resources.extend(resources)
         return True
 
@@ -474,9 +476,9 @@ def test_delete_job_cleans_declared_resources_before_deleting_history(
     """Use durable cleanup resources before deleting the Prefect flow run."""
     job_id = uuid4()
     _persist_job(job_store, job_id, "finished-job")
-    cleaned_resources: list[MinioResource] = []
+    cleaned_resources: list[S3Resource] = []
     delete_called = False
-    resource = MinioResource(host="omotes-minio", port=9000, path="flow-results/run-id")
+    resource = S3Resource(host="omotes-seaweedfs", port=8333, path="flow-results/run-id")
     resource_key = resource.model_dump_json(by_alias=True)
     job_store.resources[job_id] = {
         resource_key: JobCleanupResource(resource_key=resource_key, resource=resource),
@@ -494,7 +496,7 @@ def test_delete_job_cleans_declared_resources_before_deleting_history(
         async def read_flow_run(self, _: UUID) -> SimpleNamespace:
             return SimpleNamespace(name="finished-job", tags=[], state=Cancelled())
 
-    def clean_resources(resources: list[MinioResource], _settings: object) -> None:
+    def clean_resources(resources: list[S3Resource], _settings: object) -> None:
         cleaned_resources.extend(resources)
 
     async def delete_existing_flow_run(_: UUID) -> bool:
@@ -510,7 +512,7 @@ def test_delete_job_cleans_declared_resources_before_deleting_history(
 
     assert response.status_code == 200
     assert delete_called
-    assert cleaned_resources == [MinioResource(host="omotes-minio", port=9000, path="flow-results/run-id")]
+    assert cleaned_resources == [S3Resource(host="omotes-seaweedfs", port=8333, path="flow-results/run-id")]
 
 
 def test_delete_job_logs_cleanup_failure_when_credentials_do_not_match(
@@ -523,7 +525,7 @@ def test_delete_job_logs_cleanup_failure_when_credentials_do_not_match(
     job_id = uuid4()
     _persist_job(job_store, job_id, "finished-job")
     delete_called = False
-    resource = MinioResource(host="unconfigured-minio", port=9000, path="flow-results/run-id")
+    resource = S3Resource(host="unconfigured-s3", port=8333, path="flow-results/run-id")
     resource_key = resource.model_dump_json(by_alias=True)
     job_store.resources[job_id] = {
         resource_key: JobCleanupResource(resource_key=resource_key, resource=resource),
@@ -554,30 +556,103 @@ def test_delete_job_logs_cleanup_failure_when_credentials_do_not_match(
 
     assert response.status_code == 200
     assert delete_called
-    assert "Failed to delete job cleanup resource type=minio host=unconfigured-minio port=9000" in caplog.messages
+    assert "Failed to delete job cleanup resource type=s3 host=unconfigured-s3 port=8333" in caplog.messages
 
 
-def test_minio_cleanup_limits_deletion_to_one_run_folder(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Use a trailing slash so MinIO prefix matching cannot include sibling runs."""
+def test_s3_cleanup_limits_deletion_to_one_run_folder(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Limit S3 deletion to one run folder and then remove its empty Filer directory."""
     prefixes: list[str] = []
+    removed_folders: list[S3Resource] = []
 
-    class FakeMinio:
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
-            pass
+    class FakePaginator:
+        def paginate(self, *, Bucket: str, Prefix: str) -> list[dict[str, object]]:
+            assert Bucket == "prefect-results"
+            prefixes.append(Prefix)
+            return [{"Contents": [{"Key": "flow-results/run-1/input.esdl"}]}]
 
-        def list_objects(self, _bucket: str, prefix: str, recursive: bool) -> list[object]:
-            assert recursive
-            prefixes.append(prefix)
-            return []
-
-    monkeypatch.setattr(resource_cleanup, "Minio", FakeMinio)
-
-    resource_cleanup._delete_minio_resource(
-        MinioResource(host=settings.minio_host, port=int(settings.minio_port), path="flow-results/run-1"),
-        settings,
+    fake_client = SimpleNamespace(
+        get_paginator=lambda name: FakePaginator() if name == "list_objects_v2" else pytest.fail(name),
+        delete_object=lambda **kwargs: prefixes.append(kwargs["Key"]),
+    )
+    monkeypatch.setattr(resource_cleanup, "s3_client", lambda _settings: fake_client)
+    monkeypatch.setattr(
+        resource_cleanup,
+        "remove_s3_folder_if_empty",
+        lambda folder, _settings: removed_folders.append(folder),
     )
 
-    assert prefixes == ["flow-results/run-1/"]
+    resource = S3Resource(host=settings.s3_host, port=int(settings.s3_port), path="flow-results/run-1")
+    resource_cleanup._delete_s3_resource(resource, settings)
+
+    assert prefixes == ["flow-results/run-1/", "flow-results/run-1/input.esdl"]
+    assert removed_folders == [resource]
+
+
+def test_remove_s3_folder_if_empty_uses_non_recursive_filer_delete(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use a non-recursive Filer delete so any unexpected children are preserved."""
+    requests: list[tuple[Request, float]] = []
+
+    class FakeResponse:
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(
+            self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+        ) -> None:
+            return None
+
+    def fake_urlopen(request: Request, *, timeout: float) -> FakeResponse:
+        requests.append((request, timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr(resource_cleanup, "urlopen", fake_urlopen)
+    resource = S3Resource(
+        host=settings.s3_host,
+        port=int(settings.s3_port),
+        bucket="prefect-results",
+        path="flow-results/run-1",
+    )
+
+    resource_cleanup.remove_s3_folder_if_empty(resource, settings)
+
+    request, timeout = requests[0]
+    assert request.full_url == (
+        f"http://{settings.s3_host}:{settings.s3_filer_port}/buckets/prefect-results/flow-results/run-1?recursive=false"
+    )
+    assert request.method == "DELETE"
+    assert timeout == settings.request_timeout_seconds
+
+
+def test_remove_s3_folder_if_empty_surfaces_non_empty_folder_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Surface Filer errors rather than treating a non-empty folder as cleaned up."""
+
+    def non_empty_folder(_request: Request, *, timeout: float) -> None:
+        raise HTTPError("http://seaweedfs", 500, "Internal Server Error", {}, None)
+
+    monkeypatch.setattr(resource_cleanup, "urlopen", non_empty_folder)
+    resource = S3Resource(
+        host=settings.s3_host,
+        port=int(settings.s3_port),
+        bucket="prefect-results",
+        path="flow-results/run-1",
+    )
+
+    with pytest.raises(HTTPError, match="500"):
+        resource_cleanup.remove_s3_folder_if_empty(resource, settings)
+
+
+def test_remove_s3_folder_if_empty_rejects_parent_directory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reject dot-segments before building a Filer URL."""
+    monkeypatch.setattr(resource_cleanup, "urlopen", lambda *_args, **_kwargs: pytest.fail("must not connect"))
+    resource = S3Resource(
+        host=settings.s3_host,
+        port=int(settings.s3_port),
+        bucket="prefect-results",
+        path="flow-results/..",
+    )
+
+    with pytest.raises(ValueError, match="outside one flow-results folder"):
+        resource_cleanup.remove_s3_folder_if_empty(resource, settings)
 
 
 def test_influx_cleanup_rejects_non_uuid_database_before_connecting(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1035,7 +1110,7 @@ def test_create_job_returns_404_when_prefect_deployment_unavailable(
     async def _raise_deployment_missing(**_: object) -> UUID:
         raise RuntimeError("RuntimeError: Prefect deployment 'grow_optimizer:0.10.2' not found for run 'job-123'")
 
-    deleted_resources: list[MinioResource] = []
+    deleted_resources: list[S3Resource] = []
     monkeypatch.setattr(workflow_registry, "get_workflow_definition", _fake_get_workflow_definition)
     monkeypatch.setattr(job_routes, "trigger_flow_run", _raise_deployment_missing)
     monkeypatch.setattr(job_routes, "_delete_input_esdl", deleted_resources.append)
@@ -1060,7 +1135,7 @@ def test_create_job_returns_404_when_prefect_deployment_unavailable(
 def test_create_job_stores_large_input_esdl_and_passes_reference_to_prefect(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, job_store: InMemoryJobStore
 ) -> None:
-    """Store large input ESDL in MinIO and pass only its URI to Prefect."""
+    """Store large input ESDL in S3 and pass only its URI to Prefect."""
 
     async def fake_get_workflow_definition(_: str) -> WorkflowDefinition:
         return WorkflowDefinition(
@@ -1096,7 +1171,7 @@ def test_create_job_stores_large_input_esdl_and_passes_reference_to_prefect(
     assert isinstance(flow_results_folder, str)
     assert re.fullmatch(r"large-job-\d{8}-\d{2}h\d{2}m\d{2}s-[0-9a-f]{8}", flow_results_folder)
     assert parameters == {
-        "input_esdl_minio_path": f"s3://prefect-results/flow-results/{flow_results_folder}/input.esdl",
+        "input_esdl_s3_path": f"s3://prefect-results/flow-results/{flow_results_folder}/input.esdl",
         "flow_results_folder": flow_results_folder,
         "workflow_type_name": "grow_optimizer_default",
         "workflow_config": {},
@@ -1193,9 +1268,9 @@ def test_register_job_cleanup_resources_is_idempotent(
         "version": 1,
         "resources": [
             {
-                "type": "minio",
+                "type": "s3",
                 "host": "localhost",
-                "port": 9000,
+                "port": 8333,
                 "path": f"flow-results/{job_id}",
             }
         ],
@@ -1210,6 +1285,6 @@ def test_register_job_cleanup_resources_is_idempotent(
     registered_paths = [
         resource.resource.path
         for resource in job_store.resources[job_id].values()
-        if isinstance(resource.resource, MinioResource)
+        if isinstance(resource.resource, S3Resource)
     ]
     assert registered_paths.count(f"flow-results/{job_id}") == 1

@@ -6,17 +6,15 @@ import logging
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
-from io import BytesIO
 from typing import Annotated, cast
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
-from minio import Minio
 from omotes_sdk.prefect_util import (
     PREFECT_RESULTS_BUCKET,
     JobCleanupResources,
-    MinioResource,
+    S3Resource,
     delete_run,
     from_prefect_state_type_to_job_status,
     get_flow_run_status_and_results,
@@ -39,7 +37,7 @@ from orchestrator.models import (
     JobSummary,
 )
 from orchestrator.prefect_errors import raise_for_prefect_runtime_error
-from orchestrator.resource_cleanup import cleanup_resources
+from orchestrator.resource_cleanup import cleanup_resources, s3_client
 from orchestrator.settings import settings
 
 logger = logging.getLogger("orchestrator")
@@ -78,15 +76,6 @@ def _decode_input_esdl(input_esdl: str) -> str:
         raise HTTPException(status_code=400, detail="input_esdl must be valid base64-encoded UTF-8 text") from exc
 
 
-def _minio_client() -> Minio:
-    return Minio(
-        f"{settings.minio_host}:{settings.minio_port}",
-        access_key=settings.minio_access_key,
-        secret_key=settings.minio_secret,
-        secure=False,
-    )
-
-
 def _create_flow_results_folder(run_name: str) -> str:
     sanitized_name = re.sub(r"[^a-z0-9-]+", "-", run_name.lower().strip())
     sanitized_name = re.sub(r"-+", "-", sanitized_name).strip("-") or "job"
@@ -94,31 +83,30 @@ def _create_flow_results_folder(run_name: str) -> str:
     return f"{sanitized_name}-{timestamp}-{uuid4().hex[:8]}"
 
 
-def _store_input_esdl(input_esdl: str, flow_results_folder: str) -> tuple[str, MinioResource]:
+def _store_input_esdl(input_esdl: str, flow_results_folder: str) -> tuple[str, S3Resource]:
     object_path = f"flow-results/{flow_results_folder}/input.esdl"
     input_bytes = input_esdl.encode("utf-8")
-    client = _minio_client()
+    client = s3_client(settings)
     client.put_object(
-        _INPUT_ESDL_BUCKET,
-        object_path,
-        BytesIO(input_bytes),
-        length=len(input_bytes),
-        content_type="application/xml",
+        Bucket=_INPUT_ESDL_BUCKET,
+        Key=object_path,
+        Body=input_bytes,
+        ContentType="application/xml",
     )
-    resource = MinioResource(
-        host=settings.minio_host,
-        port=int(settings.minio_port),
+    resource = S3Resource(
+        host=settings.s3_host,
+        port=int(settings.s3_port),
         bucket=_INPUT_ESDL_BUCKET,
         path=f"flow-results/{flow_results_folder}",
     )
     return f"s3://{_INPUT_ESDL_BUCKET}/{object_path}", resource
 
 
-def _delete_input_esdl(resource: MinioResource) -> None:
-    _minio_client().remove_object(resource.bucket, f"{resource.path}/input.esdl")
+def _delete_input_esdl(resource: S3Resource) -> None:
+    s3_client(settings).delete_object(Bucket=resource.bucket, Key=f"{resource.path}/input.esdl")
 
 
-def _cleanup_unregistered_input_esdl(resource: MinioResource, reason: str) -> None:
+def _cleanup_unregistered_input_esdl(resource: S3Resource, reason: str) -> None:
     try:
         _delete_input_esdl(resource)
     except Exception:
@@ -128,7 +116,7 @@ def _cleanup_unregistered_input_esdl(resource: MinioResource, reason: str) -> No
 async def _persist_created_job(
     run_id: UUID,
     job_input: JobInput,
-    input_esdl_resource: MinioResource,
+    input_esdl_resource: S3Resource,
     store: JobStore,
 ) -> None:
     try:
@@ -155,12 +143,11 @@ def _read_input_esdl(input_reference: object) -> str | None:
     if parsed.scheme != "s3" or not parsed.netloc or not parsed.path.strip("/"):
         return input_reference
 
-    response = _minio_client().get_object(parsed.netloc, parsed.path.lstrip("/"))
+    response = s3_client(settings).get_object(Bucket=parsed.netloc, Key=parsed.path.lstrip("/"))["Body"]
     try:
         return response.read().decode("utf-8")
     finally:
         response.close()
-        response.release_conn()
 
 
 def _b64_encode_esdl_str(output_esdl: object) -> str | None:
@@ -361,7 +348,7 @@ async def create_job(job_input: JobInput, store: JobStoreDependency) -> JobStatu
     flow_results_folder = _create_flow_results_folder(job_input.job_name)
     input_esdl_reference, input_esdl_resource = _store_input_esdl(input_esdl, flow_results_folder)
     parameters = {
-        "input_esdl_minio_path": input_esdl_reference,
+        "input_esdl_s3_path": input_esdl_reference,
         "flow_results_folder": flow_results_folder,
         "workflow_type_name": job_input.workflow_type,
         "workflow_config": job_input.input_params_dict,
@@ -442,7 +429,11 @@ async def get_job(job_id: str, store: JobStoreDependency) -> JobResponse:
         raise HTTPException(status_code=404, detail=f"Unknown job {job_id}")
     try:
         run_name, state_type, input_parameters, tags, artifacts, logs = await get_flow_run_status_and_results(
-            job_uuid, settings.minio_host, settings.minio_port, settings.minio_access_key, settings.minio_secret
+            job_uuid,
+            settings.s3_host,
+            settings.s3_port,
+            settings.s3_access_key,
+            settings.s3_secret_key,
         )
     except ObjectNotFound:
         return _job_response_without_prefect(stored_job)
@@ -468,7 +459,7 @@ async def get_job(job_id: str, store: JobStoreDependency) -> JobResponse:
     esdl_messages_data = _parse_artifact_data(esdl_messages_artifact.get("data")) if esdl_messages_artifact else None
     progress_artifact = _find_artifact_by_prefix(artifacts, "progress")
 
-    input_esdl = _read_input_esdl(input_parameters.get("input_esdl_minio_path"))
+    input_esdl = _read_input_esdl(input_parameters.get("input_esdl_s3_path"))
 
     return JobResponse(
         job_id=job_uuid,
