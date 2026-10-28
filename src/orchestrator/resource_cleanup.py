@@ -2,12 +2,16 @@
 
 import logging
 from collections.abc import Iterable
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 from uuid import UUID
 
+import boto3
 import psycopg
+from botocore.client import BaseClient
+from botocore.config import Config
 from influxdb import InfluxDBClient
-from minio import Minio
-from omotes_sdk.prefect_util import MinioResource, TimeseriesResource
+from omotes_sdk.prefect_util import S3Resource, TimeseriesResource
 from psycopg import sql
 
 from orchestrator.settings import Settings
@@ -15,13 +19,24 @@ from orchestrator.settings import Settings
 logger = logging.getLogger("orchestrator")
 
 
-def cleanup_resources(resources: Iterable[MinioResource | TimeseriesResource], settings: Settings) -> bool:
+def s3_client(settings: Settings) -> BaseClient:
+    """Connect to the S3 gateway using path-style bucket URLs."""
+    return boto3.client(
+        "s3",
+        endpoint_url=f"http://{settings.s3_host}:{settings.s3_port}",
+        aws_access_key_id=settings.s3_access_key,
+        aws_secret_access_key=settings.s3_secret_key,
+        config=Config(s3={"addressing_style": "path"}),
+    )
+
+
+def cleanup_resources(resources: Iterable[S3Resource | TimeseriesResource], settings: Settings) -> bool:
     """Delete all declared resources using credentials for their exact endpoint, logging failures."""
     succeeded = True
     for resource in resources:
         try:
-            if isinstance(resource, MinioResource):
-                _delete_minio_resource(resource, settings)
+            if isinstance(resource, S3Resource):
+                _delete_s3_resource(resource, settings)
             elif resource.type == "influxdb":
                 _delete_influxdb_resource(resource, settings)
             else:
@@ -37,29 +52,53 @@ def cleanup_resources(resources: Iterable[MinioResource | TimeseriesResource], s
     return succeeded
 
 
-def _delete_minio_resource(resource: MinioResource, settings: Settings) -> None:
-    if resource.host != settings.minio_host or resource.port != int(settings.minio_port):
-        _raise_missing_credentials("MinIO", resource.host, resource.port)
-    run_folder = resource.path.removeprefix("flow-results/").strip("/")
-    if not resource.path.startswith("flow-results/") or not run_folder or "/" in run_folder:
-        raise ValueError(f"Refusing to delete MinIO path outside one flow-results folder: {resource.path}")
+def _delete_s3_resource(resource: S3Resource, settings: Settings) -> None:
+    run_folder = _s3_run_folder(resource, settings)
 
-    client = Minio(
-        f"{resource.host}:{resource.port}",
-        access_key=settings.minio_access_key,
-        secret_key=settings.minio_secret,
-        secure=False,
-    )
+    client = s3_client(settings)
     deleted_count = 0
-    for object_info in client.list_objects(resource.bucket, prefix=f"flow-results/{run_folder}/", recursive=True):
-        client.remove_object(resource.bucket, object_info.object_name)
-        deleted_count += 1
+    pages = client.get_paginator("list_objects_v2").paginate(
+        Bucket=resource.bucket, Prefix=f"flow-results/{run_folder}/"
+    )
+    for page in pages:
+        for object_info in page.get("Contents", []):
+            client.delete_object(Bucket=resource.bucket, Key=object_info["Key"])
+            deleted_count += 1
+    remove_s3_folder_if_empty(resource, settings)
     if deleted_count == 0:
         logger.warning(
-            "Cleanup resource data not found type=minio bucket=%s resource_path=%s",
+            "Cleanup resource data not found type=s3 bucket=%s resource_path=%s",
             resource.bucket,
             resource.path,
         )
+
+
+def remove_s3_folder_if_empty(resource: S3Resource, settings: Settings) -> None:
+    """Remove a SeaweedFS directory entry only if it has no remaining children."""
+    run_folder = _s3_run_folder(resource, settings)
+    filer_path = f"/buckets/{quote(resource.bucket, safe='')}/flow-results/{quote(run_folder, safe='')}"
+    request = Request(
+        f"http://{settings.s3_host}:{settings.s3_filer_port}{filer_path}?recursive=false",
+        method="DELETE",
+    )
+    with urlopen(  # noqa: S310 - the URL uses the configured SeaweedFS Filer host over HTTP
+        request, timeout=settings.request_timeout_seconds
+    ):
+        pass
+
+
+def _s3_run_folder(resource: S3Resource, settings: Settings) -> str:
+    if resource.host != settings.s3_host or resource.port != int(settings.s3_port):
+        _raise_missing_credentials("S3", resource.host, resource.port)
+    run_folder = resource.path.removeprefix("flow-results/").strip("/")
+    if (
+        not resource.path.startswith("flow-results/")
+        or not run_folder
+        or "/" in run_folder
+        or run_folder in {".", ".."}
+    ):
+        raise ValueError(f"Refusing to delete S3 path outside one flow-results folder: {resource.path}")
+    return run_folder
 
 
 def _delete_influxdb_resource(resource: TimeseriesResource, settings: Settings) -> None:
