@@ -4,6 +4,7 @@ import json
 import logging
 import re
 from collections.abc import Sequence
+from email.message import Message
 from pathlib import Path
 from types import SimpleNamespace, TracebackType
 from typing import cast
@@ -627,7 +628,7 @@ def test_remove_s3_folder_if_empty_surfaces_non_empty_folder_error(monkeypatch: 
     """Surface Filer errors rather than treating a non-empty folder as cleaned up."""
 
     def non_empty_folder(_request: Request, *, timeout: float) -> None:
-        raise HTTPError("http://seaweedfs", 500, "Internal Server Error", {}, None)
+        raise HTTPError("http://seaweedfs", 500, "Internal Server Error", Message(), None)
 
     monkeypatch.setattr(resource_cleanup, "urlopen", non_empty_folder)
     resource = S3Resource(
