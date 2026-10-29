@@ -8,6 +8,7 @@ from email.message import Message
 from pathlib import Path
 from types import SimpleNamespace, TracebackType
 from typing import cast
+from unittest.mock import Mock
 from urllib.error import HTTPError
 from urllib.request import Request
 from uuid import UUID, uuid4
@@ -29,6 +30,25 @@ from orchestrator.main import create_app
 from orchestrator.routes import job as job_routes
 from orchestrator.settings import Settings, settings
 from orchestrator.workflow_types import WorkflowDefinition
+
+
+def test_store_input_esdl_uploads_utf8_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep input ESDL previewable as text without changing its content or location."""
+    s3 = Mock()
+    monkeypatch.setattr(job_routes, "s3_client", lambda _: s3)
+    input_esdl = "<esdl>caf\u00e9</esdl>"
+
+    reference, resource = job_routes._store_input_esdl(input_esdl, "test-run")
+
+    s3.put_object.assert_called_once_with(
+        Bucket="prefect-results",
+        Key="flow-results/test-run/input.esdl",
+        Body=input_esdl.encode("utf-8"),
+        ContentType="text/plain; charset=utf-8",
+    )
+    assert reference == "s3://prefect-results/flow-results/test-run/input.esdl"
+    assert resource.bucket == "prefect-results"
+    assert resource.path == "flow-results/test-run"
 
 
 async def _fake_get_flow_versions_by_name(flow_names: list[str]) -> dict[str, list[str]]:

@@ -91,7 +91,7 @@ def _store_input_esdl(input_esdl: str, flow_results_folder: str) -> tuple[str, S
         Bucket=_INPUT_ESDL_BUCKET,
         Key=object_path,
         Body=input_bytes,
-        ContentType="application/xml",
+        ContentType="text/plain; charset=utf-8",
     )
     resource = S3Resource(
         host=settings.s3_host,
